@@ -1,0 +1,28 @@
+name: shortener
+
+services:
+  postgres:
+    image: postgres:16.10-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_DB: postgres
+      MIGRATOR_DB_PASSWORD: ${MIGRATOR_DB_PASSWORD}
+      API_DB_PASSWORD: ${API_DB_PASSWORD}
+      PROCESSOR_DB_PASSWORD: ${PROCESSOR_DB_PASSWORD}
+      ADMIN_DB_PASSWORD: ${ADMIN_DB_PASSWORD}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres:/bootstrap:ro
+      - ./infra/postgres/init.sh:/docker-entrypoint-initdb.d/10-bootstrap.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shortener"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:
