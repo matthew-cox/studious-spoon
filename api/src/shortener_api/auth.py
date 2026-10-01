@@ -52,11 +52,13 @@ class HttpJwksProvider:
         http: httpx.AsyncClient,
         clock: Clock,
         min_refresh_interval: timedelta = timedelta(seconds=30),
+        cold_retry_interval: timedelta = timedelta(seconds=5),
     ) -> None:
         self._url = jwks_url
         self._http = http
         self._clock = clock
         self._min_refresh = min_refresh_interval
+        self._cold_retry = cold_retry_interval
         self._keys: dict[str, Any] = {}
         self._fetched_at: datetime | None = None
         self._lock = asyncio.Lock()
@@ -69,10 +71,15 @@ class HttpJwksProvider:
                 await self._refresh()
         if kid in self._keys:
             return self._keys[kid]
+        if not self._keys:
+            raise JwksUnavailableError("signing keys have not been fetched yet")
         raise UnknownKeyError(kid)
 
     def _may_refresh(self) -> bool:
-        return self._fetched_at is None or self._clock.now() - self._fetched_at >= self._min_refresh
+        if self._fetched_at is None:
+            return True
+        interval = self._min_refresh if self._keys else self._cold_retry
+        return self._clock.now() - self._fetched_at >= interval
 
     async def _refresh(self) -> None:
         self._fetched_at = self._clock.now()

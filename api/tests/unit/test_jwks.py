@@ -89,3 +89,23 @@ async def test_me_is_503_when_keys_cannot_be_fetched(settings, dead_engine, cloc
         response = await http.get("/api/v1/me", headers={"Authorization": f"Bearer {mint_token()}"})
     assert response.status_code == 503
     assert response.json()["detail"] == "identity provider unavailable"
+
+
+@respx.mock
+async def test_cold_start_failure_stays_unavailable_without_refetching(provider):
+    route = respx.get(URL).mock(side_effect=httpx.ConnectError("refused"))
+    with pytest.raises(JwksUnavailableError):
+        await provider.get_key("test-key")
+    with pytest.raises(JwksUnavailableError):  # rate limited, but never UnknownKeyError
+        await provider.get_key("test-key")
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_cold_start_recovers_after_the_short_retry_interval(provider, signing_key, clock):
+    route = respx.get(URL).mock(side_effect=httpx.ConnectError("refused"))
+    with pytest.raises(JwksUnavailableError):
+        await provider.get_key("test-key")
+    clock.advance(timedelta(seconds=6))
+    route.mock(return_value=httpx.Response(200, json=jwks(signing_key)))
+    assert await provider.get_key("test-key") is not None
