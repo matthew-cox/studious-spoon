@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import cast
@@ -20,6 +20,7 @@ class AdminDeps:
     api: ApiClient
     clock: Callable[[], datetime]
     templates: Jinja2Templates
+    aclose: Callable[[], Awaitable[None]] | None = None  # releases engine / HTTP client
 
 
 def get_deps(request: Request) -> AdminDeps:

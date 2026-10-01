@@ -9,7 +9,10 @@ from shortener_admin.deps import get_deps
 
 
 def is_htmx(request: Request) -> bool:
-    return request.headers.get("hx-request") == "true"
+    """True for HTMX fragment requests. Boosted navigations want whole pages."""
+    return (
+        request.headers.get("hx-request") == "true" and request.headers.get("hx-boosted") != "true"
+    )
 
 
 def render(

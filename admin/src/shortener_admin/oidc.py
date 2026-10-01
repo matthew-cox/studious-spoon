@@ -23,7 +23,19 @@ _LIBRARY_ERRORS = (OAuthError, JoseError, httpx.HTTPError, KeyError, ValueError,
 
 
 class OidcError(Exception):
-    """Login or refresh failed. The reason is logged; users see a generic message."""
+    """Login or refresh failed. The reason is logged; users see a generic message.
+
+    `transient` marks outages (network failure, 5xx) as opposed to rejections (4xx)."""
+
+    def __init__(self, message: str, *, transient: bool = False) -> None:
+        super().__init__(message)
+        self.transient = transient
+
+
+def _is_transient(exc: Exception) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return isinstance(exc, httpx.TransportError)
 
 
 class KeycloakOidc:
@@ -67,6 +79,9 @@ class KeycloakOidc:
     async def complete_login(self, request: Request) -> tuple[TokenSet, str]:
         next_path = safe_next_path(request.session.get("next"))
         try:
+            # Never trust discovery for the algorithm: Keycloak advertises HS256 and others.
+            metadata = await self._app.load_server_metadata()
+            metadata["id_token_signing_alg_values_supported"] = ["RS256"]
             token = await self._app.authorize_access_token(request)
             if "userinfo" not in token:  # Authlib only sets it after validating the ID token
                 raise OidcError("no validated id token in response")
@@ -89,7 +104,7 @@ class KeycloakOidc:
             )
             return self._token_set(dict(token), previous_id_token)
         except _LIBRARY_ERRORS as exc:
-            raise OidcError(f"refresh failed: {exc}") from exc
+            raise OidcError(f"refresh failed: {exc}", transient=_is_transient(exc)) from exc
 
     async def end_session_url(self, id_token_hint: str, post_logout_redirect_uri: str) -> str:
         try:

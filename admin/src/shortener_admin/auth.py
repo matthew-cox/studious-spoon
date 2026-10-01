@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 from typing import Annotated
+from urllib.parse import urlsplit
 
 from fastapi import Depends, Request
 from fastapi.responses import Response
@@ -9,7 +10,7 @@ from fastapi.responses import Response
 from shortener_admin.api_client import ApiError
 from shortener_admin.deps import AdminDeps, get_deps
 from shortener_admin.oidc import OidcError
-from shortener_admin.security import tokens_match
+from shortener_admin.security import safe_next_path, tokens_match
 from shortener_admin.sessions import Session
 from shortener_admin.settings import AdminSettings
 
@@ -38,6 +39,28 @@ def current_path(request: Request) -> str:
     return request.url.path + (f"?{query}" if query else "")
 
 
+def _same_origin_path(url: str, public_base_url: str) -> str:
+    """Reduce an absolute URL on our own origin to path+query; anything else becomes `/`."""
+    parts = urlsplit(url)
+    if parts.scheme or parts.netloc:
+        own = urlsplit(public_base_url)
+        if (parts.scheme, parts.netloc) != (own.scheme, own.netloc):
+            return "/"
+    return parts.path + (f"?{parts.query}" if parts.query else "")
+
+
+def return_path(request: Request) -> str:
+    """Where to send the user after (re-)login: the page they were on, never a POST-only URL."""
+    if request.method in ("GET", "HEAD"):
+        return safe_next_path(current_path(request))
+    public = str(get_deps(request).settings.public_base_url)
+    for header in ("hx-current-url", "referer"):
+        value = request.headers.get(header)
+        if value:
+            return safe_next_path(_same_origin_path(value, public))
+    return "/"
+
+
 def set_sid_cookie(response: Response, session_id: str, settings: AdminSettings) -> None:
     response.set_cookie(
         SID_COOKIE,
@@ -56,19 +79,26 @@ async def require_session(
     now = deps.clock()
     session = await deps.sessions.get(sid, now) if sid else None
     if session is None:
-        raise LoginRequired(current_path(request))
+        raise LoginRequired(return_path(request))
     if session.tokens.access_expires_at - now <= REFRESH_MARGIN:
         try:
             tokens = await deps.oidc.refresh(session.tokens.refresh_token, session.tokens.id_token)
             me = await deps.api.me(tokens.access_token)
-        except (OidcError, ApiError) as exc:
+        except OidcError as exc:
+            if exc.transient:  # Keycloak is down, not the session: keep it and say so
+                raise ApiError(503, "Sign-in service unavailable") from exc
             await deps.sessions.delete(session.id)
-            raise LoginRequired(current_path(request), expired=True) from exc
+            raise LoginRequired(return_path(request), expired=True) from exc
+        except ApiError as exc:
+            if exc.status != 401:
+                raise
+            await deps.sessions.delete(session.id)
+            raise LoginRequired(return_path(request), expired=True) from exc
         refreshed = await deps.sessions.update_tokens(
             session.id, tokens=tokens, roles=frozenset(me["roles"]), now=now
         )
         if refreshed is None:
-            raise LoginRequired(current_path(request), expired=True)
+            raise LoginRequired(return_path(request), expired=True)
         session = refreshed
     request.state.session = session
     return session

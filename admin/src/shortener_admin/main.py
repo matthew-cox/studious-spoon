@@ -1,6 +1,8 @@
 """App factory and production wiring."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -11,10 +13,11 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import create_async_engine
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from shortener_admin.api_client import ApiClient, ApiError
-from shortener_admin.auth import SID_COOKIE, CsrfFailed, LoginRequired, NoAccess
+from shortener_admin.auth import SID_COOKIE, CsrfFailed, LoginRequired, NoAccess, return_path
 from shortener_admin.deps import AdminDeps, get_deps
 from shortener_admin.oidc import KeycloakOidc
 from shortener_admin.routes import auth, health, links, pages
@@ -50,7 +53,21 @@ def _to_login(request: Request, next_path: str, expired: bool) -> Response:
 
 
 def create_app(deps: AdminDeps) -> FastAPI:
-    app = FastAPI(title="Shortener admin", docs_url=None, redoc_url=None, openapi_url=None)
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            if deps.aclose is not None:
+                await deps.aclose()
+
+    app = FastAPI(
+        title="Shortener admin",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        lifespan=lifespan,
+    )
     app.state.deps = deps
     app.add_middleware(
         SessionMiddleware,
@@ -87,9 +104,18 @@ def create_app(deps: AdminDeps) -> FastAPI:
         if error.status == 401:  # token revoked between refreshes
             if sid := request.cookies.get(SID_COOKIE):
                 await get_deps(request).sessions.delete(sid)
-            return _to_login(request, request.url.path, expired=True)
+            return _to_login(request, return_path(request), expired=True)
         return render(request, "error.html", status_code=error.status, title=error.title,
                       message=error.detail or "")  # fmt: skip
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_error(request: Request, exc: Exception) -> Response:
+        status = exc.status_code if isinstance(exc, StarletteHTTPException) else 500
+        title = {404: "Page not found", 405: "Not allowed"}.get(status, "Error")
+        response = render(request, "error.html", status_code=status, title=title, message="")
+        if isinstance(exc, StarletteHTTPException) and exc.headers:
+            response.headers.update(exc.headers)  # e.g. Allow on 405
+        return response
 
     @app.exception_handler(Exception)
     async def _unexpected(request: Request, exc: Exception) -> Response:
@@ -114,6 +140,11 @@ def build_deps(settings: AdminSettings) -> AdminDeps:
     api_http = httpx.AsyncClient(
         base_url=str(settings.api_base_url), timeout=settings.http_timeout_seconds
     )
+
+    async def aclose() -> None:
+        await api_http.aclose()
+        await engine.dispose()
+
     return AdminDeps(
         settings=settings,
         sessions=PostgresSessionStore(engine),
@@ -121,6 +152,7 @@ def build_deps(settings: AdminSettings) -> AdminDeps:
         api=ApiClient(api_http),
         clock=utc_now,
         templates=make_templates(),
+        aclose=aclose,
     )
 
 

@@ -1,11 +1,13 @@
 """Calls the API with the signed-in user's own token (token relay, spec §8). The API decides."""
 
+import logging
 from datetime import datetime
 from http import HTTPStatus
 from typing import Any
 
 import httpx
 
+logger = logging.getLogger(__name__)
 _CORE_PROBLEM_KEYS = {"type", "title", "status", "detail"}
 
 
@@ -49,7 +51,8 @@ class ApiClient:
                 method, path, params=params, json=json, headers={"Authorization": f"Bearer {token}"}
             )
         except httpx.HTTPError as exc:
-            raise ApiError(503, "API unavailable", str(exc)) from exc
+            logger.warning("API request failed: %s %s: %r", method, path, exc)
+            raise ApiError(503, "API unavailable") from exc
         if response.status_code >= 400:
             try:
                 body = response.json()
