@@ -1,0 +1,73 @@
+# URL Shortener Platform
+
+A URL shortener with an API, an HTMX admin UI, an event-driven click pipeline (SQS), Keycloak auth,
+and OpenTelemetry. Runs entirely locally; designed to map onto AWS (see the spec).
+
+- Design spec: `docs/superpowers/specs/2026-10-01-url-shortener-design.md`
+- Implementation plans: `docs/superpowers/plans/`
+
+## Prerequisites
+
+- Docker with Compose v2 (Docker Desktop, or colima: `colima start --cpu 4 --memory 8`)
+- [uv](https://docs.astral.sh/uv/) 0.12+
+
+colima users: integration tests use testcontainers, which needs:
+
+```bash
+export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
+export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
+```
+
+## Quickstart
+
+```bash
+make sync               # install the workspace
+make up                 # start backing services, run migrations, seed Keycloak users
+make e2e                # verify the running stack
+make token USER=eddie   # print an access token for a seeded user
+make down               # stop everything and delete volumes
+```
+
+## Local services
+
+| Service | URL | Notes |
+|---|---|---|
+| Postgres | `localhost:5432` | DBs `shortener`, `keycloak`; credentials in `.env` |
+| Keycloak | http://localhost:8080 | Admin console: `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD` from `.env` |
+| ElasticMQ (SQS) | http://localhost:9324 | Stats UI: http://localhost:9325 |
+| Grafana (otel-lgtm) | http://localhost:3000 | OTLP: `localhost:4317` (gRPC), `localhost:4318` (HTTP) |
+
+Port 8080 taken on your machine? Set `KEYCLOAK_HOST_PORT` and `KEYCLOAK_URL` in `.env` (e.g. 8180)
+and run `make down && make up`. The token issuer follows that port.
+
+## Seeded users (DEV ONLY, password `password`)
+
+| User | Role |
+|---|---|
+| alice | admin |
+| eddie, erin | editor |
+| victor | viewer |
+| nora | (none) |
+
+Edit `infra/keycloak/users.yaml` and run `make seed-users` (inside compose) or `scripts/seed-users`
+(from the host) to add users or change roles. Seeding is idempotent and never removes roles it
+doesn't manage. Passwords are set on creation only (`RESET_PASSWORDS=true make seed-users` to force).
+
+## Development
+
+```bash
+make check    # ruff, mypy --strict, tests with coverage gates
+make fmt      # auto-format and fix lint
+```
+
+- Migrations live in `api/alembic` and run only via `make migrate` (the `migrate` release job).
+- Executable Python scripts live in `scripts/` and use a uv shebang (`#!/usr/bin/env -S uv run --quiet --script`)
+  with a PEP 723 header, so they run from any directory with only uv installed. Library modules and
+  container entrypoints use `python -m` instead.
+- `scripts/gen-event-schema` regenerates the committed `link.clicked` JSON schema.
+
+## Troubleshooting
+
+- **Realm changes not applied:** Keycloak imports the realm only when it doesn't exist. Run `make down && make up`.
+- **`Account is not fully set up` on login:** the user is missing email/first/last name in `users.yaml`.
+- **Testcontainers can't find Docker (colima):** export the two variables above.

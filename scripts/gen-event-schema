@@ -4,7 +4,7 @@
 # dependencies = ["shortener-events"]
 #
 # [tool.uv.sources]
-# shortener-events = { path = "../libs/shortener-events" }
+# shortener-events = { path = "../libs/shortener-events", editable = true }
 # ///
 """Regenerate libs/shortener-events/schema/link.clicked.v1.json from the ClickEvent model."""
 

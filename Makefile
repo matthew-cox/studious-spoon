@@ -36,7 +36,7 @@ check: lint typecheck test
 	cp .env.example .env
 
 up: .env
-	$(COMPOSE) up -d --build --wait postgres elasticmq keycloak
+	$(COMPOSE) up -d --build --wait postgres elasticmq keycloak otel-lgtm
 	$(COMPOSE) run --rm --build migrate
 	$(COMPOSE) run --rm --build keycloak-seed
 
@@ -53,7 +53,7 @@ seed-users: .env
 	$(COMPOSE) run --rm --build keycloak-seed
 
 token:
-	@uv run python -m keycloak_tools.token $(TOKEN_USER)
+	@scripts/token $(TOKEN_USER)
 
 e2e:
 	uv run pytest -m e2e tests/e2e -v

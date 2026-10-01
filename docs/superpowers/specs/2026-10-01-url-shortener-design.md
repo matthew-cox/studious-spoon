@@ -121,7 +121,9 @@ admin/
   static/              pico.css, chart.js, htmx.js (vendored)
   tests/
 infra/
-  keycloak/realm-export.json, users.yaml, seed_users.py
+  keycloak/realm-export.json, users.yaml
+tools/keycloak-tools/          dev tooling package: idempotent user seeding (keycloak_tools.seed), token fetching
+scripts/                       executable uv-shebang scripts: seed-users, token, gen-event-schema
   elasticmq/elasticmq.conf     queues + DLQ redrive policy
   otel/dashboards/             provisioned Grafana dashboard(s)
   postgres/init.sql            creates keycloak DB, schemas, DB users/grants
@@ -345,7 +347,7 @@ The browser reaches Keycloak at `http://localhost:8080`, but containers reach it
 4. `/auth/logout` deletes the session and redirects to Keycloak's end-session endpoint with `id_token_hint` (RP-initiated logout).
 
 ### 7.5 Seeded Users
-`infra/keycloak/users.yaml` + `seed_users.py` (idempotent; it creates or updates users and reconciles role assignments to match the file). It runs automatically through the `keycloak-seed` compose job, and can be re-run with `make seed-users`. Default users, all with password `password` (dev only):
+`infra/keycloak/users.yaml` + `keycloak_tools.seed` (idempotent; it creates or updates users and reconciles role assignments to match the file). It runs automatically through the `keycloak-seed` compose job, and can be re-run with `make seed-users`. Default users, all with password `password` (dev only):
 
 | User | Roles | Demonstrates |
 |---|---|---|

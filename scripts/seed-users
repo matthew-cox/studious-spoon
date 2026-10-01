@@ -4,7 +4,7 @@
 # dependencies = ["keycloak-tools"]
 #
 # [tool.uv.sources]
-# keycloak-tools = { path = "../tools/keycloak-tools" }
+# keycloak-tools = { path = "../tools/keycloak-tools", editable = true }
 # ///
 """DEV ONLY: seed infra/keycloak/users.yaml into the local realm from the host.
 

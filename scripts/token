@@ -1,0 +1,42 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["keycloak-tools"]
+#
+# [tool.uv.sources]
+# keycloak-tools = { path = "../tools/keycloak-tools", editable = true }
+# ///
+"""DEV ONLY: print an access token for a seeded user.
+
+    scripts/token eddie            # or: make token USER=eddie
+
+KEYCLOAK_URL comes from the environment or the repo's .env (default http://localhost:8080).
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from keycloak_tools.token import TokenError, fetch_token
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+class TokenSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=REPO_ROOT / ".env", extra="ignore")
+
+    keycloak_url: str = "http://localhost:8080"
+    keycloak_realm: str = "shortener"
+
+
+settings = TokenSettings()
+parser = argparse.ArgumentParser(description="Print an access token for a seeded user.")
+parser.add_argument("username")
+parser.add_argument("--password", default="password")
+args = parser.parse_args()
+try:
+    print(fetch_token(settings.keycloak_url, settings.keycloak_realm, args.username, args.password))
+except TokenError as exc:
+    sys.exit(str(exc))

@@ -101,5 +101,21 @@ services:
         condition: service_healthy
     restart: "no"
 
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.11.10
+    ports:
+      - "3000:3000"   # Grafana (anonymous admin in this image; local only)
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    volumes:
+      - lgtm-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health && curl -s -o /dev/null http://localhost:4318/v1/traces"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
 volumes:
   pgdata:
+  lgtm-data:
