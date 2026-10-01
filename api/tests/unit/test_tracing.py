@@ -1,5 +1,6 @@
 import dataclasses
 
+import httpx
 import pytest
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.trace import TracerProvider
@@ -46,3 +47,18 @@ async def test_4xx_problem_has_no_trace_id(client):
     response = await client.get("/api/v1/me", headers=INCOMING)
     assert response.status_code == 401
     assert "trace_id" not in response.json()
+
+
+async def test_unhandled_500_problem_includes_trace_id(deps, token_for):
+    from shortener_api.main import create_app
+
+    class Exploding:
+        async def principal(self, _token: str):
+            raise RuntimeError("boom")
+
+    exploding = dataclasses.replace(deps, token_validator=Exploding())
+    transport = httpx.ASGITransport(app=create_app(exploding), raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://sho.rt") as http:
+        response = await http.get("/api/v1/me", headers=token_for("eddie") | INCOMING)
+    assert response.status_code == 500
+    assert response.json()["trace_id"] == TRACE

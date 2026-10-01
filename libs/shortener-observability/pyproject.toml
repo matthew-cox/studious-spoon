@@ -7,6 +7,8 @@ dependencies = [
   "opentelemetry-api==1.45.0",
   "opentelemetry-sdk==1.45.0",
   "opentelemetry-exporter-otlp-proto-http==1.45.0",
+  "opentelemetry-instrumentation-sqlalchemy==0.66b0",
+  "sqlalchemy>=2.0.35,<2.1",  # instrumentation-sqlalchemy 0.66b0 supports <2.1
 ]
 
 [build-system]

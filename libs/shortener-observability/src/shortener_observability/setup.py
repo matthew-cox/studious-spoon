@@ -20,6 +20,8 @@ from opentelemetry.trace import Tracer
 
 from shortener_observability.logs import configure_logging
 
+_EXPORT_TIMEOUT_S = 2  # bounds retries against an unreachable collector, so shutdown stays quick
+
 
 @dataclass
 class Telemetry:
@@ -69,25 +71,30 @@ def configure_telemetry(
     extra_handlers: list[logging.Handler] = []
     if base:
         tracer_provider.add_span_processor(
-            BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{base}/v1/traces"))
+            BatchSpanProcessor(
+                OTLPSpanExporter(endpoint=f"{base}/v1/traces", timeout=_EXPORT_TIMEOUT_S)
+            )
         )
         readers.append(
             PeriodicExportingMetricReader(
-                OTLPMetricExporter(endpoint=f"{base}/v1/metrics"),
+                OTLPMetricExporter(endpoint=f"{base}/v1/metrics", timeout=_EXPORT_TIMEOUT_S),
                 export_interval_millis=metric_export_interval_ms,
             )
         )
         logger_provider = LoggerProvider(resource=resource)
         logger_provider.add_log_record_processor(
-            BatchLogRecordProcessor(OTLPLogExporter(endpoint=f"{base}/v1/logs"))
+            BatchLogRecordProcessor(
+                OTLPLogExporter(endpoint=f"{base}/v1/logs", timeout=_EXPORT_TIMEOUT_S)
+            )
         )
         with warnings.catch_warnings():
             # SDK 1.45 deprecates this handler in favour of instrumentation-logging, which would
             # add a dependency; the SDK handler is the supported path until that is removed.
             warnings.simplefilter("ignore", DeprecationWarning)
-            extra_handlers.append(
-                LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
-            )
+            otlp_handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
+        # The exporters log their own delivery failures; re-ingesting those would feed the pipeline.
+        otlp_handler.addFilter(lambda record: not record.name.startswith("opentelemetry"))
+        extra_handlers.append(otlp_handler)
     meter_provider = MeterProvider(resource=resource, metric_readers=readers)
 
     configure_logging(service_name, level=log_level, extra_handlers=extra_handlers)

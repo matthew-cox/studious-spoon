@@ -1,5 +1,6 @@
 """Shared observability: telemetry setup, JSON logs, trace propagation."""
 
+from shortener_observability.db import instrument_engine
 from shortener_observability.logs import JsonFormatter, configure_logging
 from shortener_observability.propagation import (
     current_trace_id,
@@ -15,5 +16,6 @@ __all__ = [
     "configure_telemetry",
     "current_trace_id",
     "current_traceparent",
+    "instrument_engine",
     "span_link_from_traceparent",
 ]

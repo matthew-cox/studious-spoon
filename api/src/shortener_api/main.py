@@ -9,7 +9,6 @@ from fastapi import FastAPI
 from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from shortener_api.auth import HttpJwksProvider, TokenValidator
@@ -20,7 +19,7 @@ from shortener_api.publisher import BufferedClickPublisher, SqsBatchSender
 from shortener_api.routes import health, links, redirect, stats
 from shortener_api.settings import ApiSettings, load_api_settings
 from shortener_api.telemetry import ApiTelemetry
-from shortener_observability import configure_telemetry
+from shortener_observability import configure_telemetry, instrument_engine
 
 
 @asynccontextmanager
@@ -32,6 +31,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         await deps.publisher.stop()
         await deps.engine.dispose()
+        if (uninstrument := getattr(app.state, "uninstrument_engine", None)) is not None:
+            uninstrument()
         if deps.telemetry_shutdown is not None:
             deps.telemetry_shutdown()
 
@@ -53,8 +54,8 @@ def create_app(deps: AppDeps) -> FastAPI:
             meter_provider=deps.meter_provider,
             excluded_urls="healthz,readyz",
         )
-        SQLAlchemyInstrumentor().instrument(
-            engine=deps.engine.sync_engine, tracer_provider=deps.tracer_provider
+        app.state.uninstrument_engine = instrument_engine(
+            deps.engine.sync_engine, deps.tracer_provider, deps.meter_provider
         )
     return app
 
