@@ -36,6 +36,7 @@ make down               # stop everything and delete volumes
 | Keycloak | http://localhost:8080 | Admin console: `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD` from `.env` |
 | ElasticMQ (SQS) | http://localhost:9324 | Stats UI: http://localhost:9325 |
 | API | http://localhost:8000 | OpenAPI at /docs |
+| Click processor | http://localhost:8002/healthz | Consumes click-events → analytics rollups |
 | Grafana (otel-lgtm) | http://localhost:3000 | OTLP: `localhost:4317` (gRPC), `localhost:4318` (HTTP) |
 
 Port 8080 taken on your machine? Set `KEYCLOAK_HOST_PORT` and `KEYCLOAK_URL` in `.env` (e.g. 8180)
@@ -53,8 +54,7 @@ curl -s -X POST localhost:8000/api/v1/links -H "Authorization: Bearer $TOKEN" \
 curl -si localhost:8000/<code>        # 302 → target; a link.clicked event goes to SQS
 ```
 
-Click events wait in the `click-events` queue (http://localhost:9325) until the click processor
-(Plan 3) consumes them.
+The click-processor rolls clicks into `analytics.*` within a second or two; `GET /api/v1/links/{id}/stats` shows them. Stop it (`docker compose stop click-processor`) and clicks queue up in `click-events` (http://localhost:9325); start it again and the backlog drains.
 
 ## Seeded users (DEV ONLY, password `password`)
 

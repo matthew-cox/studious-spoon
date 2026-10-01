@@ -84,6 +84,7 @@ uv workspace at the repo root. Each service is a workspace member with its own `
 ```
 pyproject.toml                 uv workspace definition (members below)
 libs/shortener-events/         shared package: ClickEvent model, JSON schema, SQS codec
+libs/shortener-testing/        shared pytest fixtures plugin (Postgres + Alembic, ElasticMQ)
 api/
   Dockerfile, alembic.ini, alembic/        (owns ALL migrations: public, analytics, admin schemas)
   src/shortener_api/
@@ -99,13 +100,10 @@ api/
 processor/
   Dockerfile
   src/shortener_processor/
-    main.py            consume loop + health/metrics endpoint
-    config.py
-    consumer.py        SQS receive/delete, batch window
-    aggregate.py       pure function: events → rollup deltas
-    rollup_store.py    RollupStore protocol + PostgresRollupStore
-    link_resolver.py   code → link_id lookup (for events without link_id)
-    telemetry.py
+    settings.py, referrers.py, aggregate.py, db.py
+    rollup_store.py, link_resolver.py
+    queue.py, sqs.py, batch.py, consumer.py
+    health.py, telemetry.py, main.py
   tests/unit/, tests/integration/
 admin/
   Dockerfile
@@ -267,8 +265,10 @@ Loop:
    - **Invalid or unknown version:** leave it on the queue (don't delete it) and log + count `result=invalid`. After 5 receives, SQS moves it to `click-events-dlq` (the redrive policy in `elasticmq.conf`, `maxReceiveCount=5`).
    - **`link_id` missing:** resolve it with `LinkResolver` (a `code → link_id` lookup with a small TTL cache).
    - **Link unknown or deleted:** count `result=unknown_link` and delete the message.
+
+   Duplicate deliveries of the same `event_id` within one batch are counted once; every copy is deleted.
 3. `aggregate(events) -> RollupDeltas`, a **pure function**, groups counts by `(link_id, hour)` and `(link_id, date, referrer_host)`.
-4. In **one transaction**, upsert every delta (`INSERT … ON CONFLICT DO UPDATE SET count = count + excluded.count`) and update `pipeline_status.last_committed_at`. Rows whose link was deleted at the same moment are skipped if they violate the foreign key: the processor checks link existence again inside the transaction.
+4. In **one transaction**, upsert every delta (`INSERT … ON CONFLICT DO UPDATE SET count = count + excluded.count`) and update `pipeline_status.last_committed_at`. Links that no longer exist are detected inside the transaction and their events count as `unknown_link`. A link deleted after that check makes the transaction fail with a foreign-key violation, so the batch is retried after the visibility timeout. (`processor_user` cannot take row locks on `links`.)
 5. After the commit, call `DeleteMessageBatch` for every processed message (valid ones and unknown-link ones).
    - If the transaction fails, nothing is deleted. The messages reappear after the visibility timeout and are retried.
    - If the commit succeeds but the delete fails, the messages are redelivered and **counted twice**. This is the accepted at-least-once overcount (D13).

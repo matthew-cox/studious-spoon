@@ -24,6 +24,7 @@ class E2ESettings(BaseSettings):
     grafana_url: str = "http://localhost:3000"
     otlp_http_url: str = "http://localhost:4318"
     api_url: str = "http://localhost:8000"
+    processor_health_url: str = "http://localhost:8002"
 
 
 @pytest.fixture(scope="session")

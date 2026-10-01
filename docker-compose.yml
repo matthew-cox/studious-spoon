@@ -139,6 +139,38 @@ services:
       retries: 20
       start_period: 5s
 
+  click-processor:
+    build:
+      context: .
+      dockerfile: processor/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    image: shortener-click-processor:${GIT_SHA:-dev}
+    environment:
+      DATABASE_URL: postgresql+psycopg://processor_user:${PROCESSOR_DB_PASSWORD:?set PROCESSOR_DB_PASSWORD in .env (see .env.example)}@postgres:5432/shortener
+      SQS_ENDPOINT_URL: http://elasticmq:9324
+      AWS_ACCESS_KEY_ID: local       # ElasticMQ ignores credentials; boto3 requires some
+      AWS_SECRET_ACCESS_KEY: local
+      SERVICE_VERSION: ${GIT_SHA:-dev}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
+      DEPLOYMENT_ENVIRONMENT: local
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      elasticmq:
+        condition: service_started
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/healthz', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
   otel-lgtm:
     image: grafana/otel-lgtm:0.11.10
     ports:

@@ -34,6 +34,7 @@ jobs:
       matrix:
         dockerfile:
           - api/Dockerfile
+          - processor/Dockerfile
           - tools/keycloak-tools/Dockerfile
     steps:
       - uses: actions/checkout@v4
