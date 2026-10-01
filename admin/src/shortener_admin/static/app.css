@@ -5,3 +5,11 @@
 form.inline { display: inline; margin: 0; }
 .muted { color: var(--pico-muted-color); }
 td.target { max-width: 28rem; overflow-wrap: anywhere; }
+/* Inline messages: errors use role="alert", notices use role="status" (Pico styles neither). */
+[role="alert"], [role="status"] {
+  padding: 0.75rem 1rem;
+  border-radius: var(--pico-border-radius);
+  border-left: 0.3rem solid;
+}
+[role="alert"] { background: #fee2e2; color: #991b1b; border-color: #dc2626; }
+[role="status"] { background: #d1fae5; color: #065f46; border-color: #10b981; }
