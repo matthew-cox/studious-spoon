@@ -64,3 +64,9 @@ def test_own_host_with_explicit_https_port():
 def test_invalid_port_is_rejected():
     with pytest.raises(InvalidTargetUrl, match="port"):
         validate_target_url("https://example.com:99999/", OWN)
+
+
+@pytest.mark.parametrize("url", ["http://[", "https://[::1", "http://[not-ip]/"])
+def test_malformed_url_is_rejected_not_raised_as_value_error(url):
+    with pytest.raises(InvalidTargetUrl, match="malformed"):
+        validate_target_url(url, OWN)

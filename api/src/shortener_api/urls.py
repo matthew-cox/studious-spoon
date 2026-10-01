@@ -11,6 +11,13 @@ class InvalidTargetUrl(ValueError):
     pass
 
 
+def _split(url: str) -> SplitResult:
+    try:
+        return urlsplit(url)
+    except ValueError as exc:
+        raise InvalidTargetUrl("URL is malformed") from exc
+
+
 def _authority(parts: SplitResult) -> tuple[str, int]:
     try:
         port = parts.port
@@ -29,13 +36,13 @@ def validate_target_url(raw: str, own_base_url: str) -> str:
         raise InvalidTargetUrl(f"URL is longer than {MAX_URL_LENGTH} characters")
     if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in url):
         raise InvalidTargetUrl("URL contains whitespace or control characters")
-    parts = urlsplit(url)
+    parts = _split(url)
     if parts.scheme.lower() not in _SCHEMES:
         raise InvalidTargetUrl("URL scheme must be http or https")
     if not parts.hostname:
         raise InvalidTargetUrl("URL must include a host")
     if parts.username is not None or parts.password is not None:
         raise InvalidTargetUrl("URL must not contain credentials")
-    if _authority(parts) == _authority(urlsplit(own_base_url)):
+    if _authority(parts) == _authority(_split(own_base_url)):
         raise InvalidTargetUrl("URL must not point at this shortener")
     return url
