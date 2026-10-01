@@ -1,5 +1,8 @@
 import asyncio
+import contextlib
 
+import httpx
+import pytest
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from shortener_processor.batch import BatchOutcome
@@ -109,3 +112,205 @@ def test_meter_provider_resource(settings):
     attributes = provider._sdk_config.resource.attributes  # private: SDK has no public accessor
     assert attributes["service.name"] == "shortener-click-processor"
     provider.shutdown()
+
+
+# ---- liveness / readiness / shutdown behaviour (real loop, waits bounded <= 0.05 s) ----
+
+
+class FakeEngine:
+    """Stands in for AsyncEngine: connect() succeeds or fails; dispose() is recorded."""
+
+    def __init__(self, healthy: bool = True) -> None:
+        self.healthy = healthy
+        self.disposed = False
+
+    @contextlib.asynccontextmanager
+    async def connect(self):
+        if not self.healthy:
+            raise ConnectionRefusedError("db down")
+        yield self
+
+    async def execute(self, _statement):
+        return None
+
+    async def dispose(self) -> None:
+        self.disposed = True
+
+
+class BlockedQueue(IdleQueue):
+    """receive() never returns, so the heartbeat stays where the test left it."""
+
+    async def receive(self, max_messages, wait_seconds):
+        await asyncio.Event().wait()
+        return []
+
+
+class ExitedConsumer:
+    """A consumer whose task finishes immediately (the loop died)."""
+
+    async def run(self, stop):
+        return None
+
+    def seconds_since_heartbeat(self) -> float:
+        return 0.0
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class Serving:
+    def __init__(self, rt: Runtime) -> None:
+        self.rt = rt
+        self.stop = asyncio.Event()
+        self.server: asyncio.Server | None = None
+        self.task = asyncio.create_task(serve(rt, self.stop, on_started=self._started))
+
+    def _started(self, server: asyncio.Server) -> None:
+        self.server = server
+
+    async def base(self) -> str:
+        while self.server is None:
+            await asyncio.sleep(0)
+        return f"http://127.0.0.1:{self.server.sockets[0].getsockname()[1]}"
+
+    async def finish(self) -> None:
+        self.stop.set()
+        await asyncio.wait_for(self.task, timeout=2)
+
+
+async def status(base: str, path: str) -> int:
+    async with httpx.AsyncClient() as http:
+        return (await http.get(base + path)).status_code
+
+
+def fake_runtime(settings, meter, queue, consumer, engine) -> Runtime:
+    return Runtime(
+        settings=settings,
+        engine=engine,
+        queue=queue,
+        consumer=consumer,
+        telemetry=ProcessorTelemetry(meter),
+    )
+
+
+async def test_healthz_is_200_while_the_consumer_is_alive_and_fresh(settings, meter):
+    clock = Clock()
+    consumer = Consumer(BlockedQueue(), HangingProcessor(), monotonic=clock)
+    serving = Serving(fake_runtime(settings, meter, BlockedQueue(), consumer, FakeEngine()))
+    assert await status(await serving.base(), "/healthz") == 200
+    await serving.finish()
+
+
+async def test_healthz_is_503_once_the_heartbeat_is_stale(settings, meter):
+    clock = Clock()
+    consumer = Consumer(BlockedQueue(), HangingProcessor(), wait_seconds=0, monotonic=clock)
+    serving = Serving(fake_runtime(settings, meter, BlockedQueue(), consumer, FakeEngine()))
+    base = await serving.base()
+    # receive_wait_seconds defaults to 20, so the limit is max(10, 3 * 20) = 60 s
+    clock.now = 59.0
+    assert await status(base, "/healthz") == 200
+    clock.now = 61.0
+    assert await status(base, "/healthz") == 503
+    await serving.finish()
+
+
+async def test_stale_limit_has_a_10_second_floor(settings, meter):
+    clock = Clock()
+    short = settings.model_copy(update={"receive_wait_seconds": 1})
+    consumer = Consumer(BlockedQueue(), HangingProcessor(), wait_seconds=0, monotonic=clock)
+    serving = Serving(fake_runtime(short, meter, BlockedQueue(), consumer, FakeEngine()))
+    base = await serving.base()
+    clock.now = 9.0  # 3 * 1 = 3 s, but the floor is 10 s
+    assert await status(base, "/healthz") == 200
+    clock.now = 11.0
+    assert await status(base, "/healthz") == 503
+    await serving.finish()
+
+
+async def test_healthz_is_503_when_the_consumer_task_has_finished(settings, meter):
+    serving = Serving(fake_runtime(settings, meter, IdleQueue(), ExitedConsumer(), FakeEngine()))
+    base = await serving.base()
+    await asyncio.sleep(0.01)  # let the consumer task complete
+    assert await status(base, "/healthz") == 503
+    await serving.finish()
+
+
+async def test_readyz_is_200_when_select_1_succeeds(settings, meter):
+    consumer = Consumer(BlockedQueue(), HangingProcessor(), monotonic=Clock())
+    serving = Serving(fake_runtime(settings, meter, BlockedQueue(), consumer, FakeEngine()))
+    assert await status(await serving.base(), "/readyz") == 200
+    await serving.finish()
+
+
+async def test_readyz_is_503_when_the_database_is_unreachable(settings, meter):
+    # unit settings point at 127.0.0.1:1, so the real engine cannot connect
+    consumer = Consumer(BlockedQueue(), HangingProcessor(), monotonic=Clock())
+    rt = runtime(settings, meter, BlockedQueue(), consumer)
+    serving = Serving(rt)
+    assert await status(await serving.base(), "/readyz") == 503
+    await serving.finish()
+
+
+class GatedProcessor:
+    """Blocks until released; records whether it completed or was cancelled."""
+
+    def __init__(self) -> None:
+        self.gate = asyncio.Event()
+        self.started = asyncio.Event()
+        self.completed = False
+        self.cancelled = False
+
+    async def process(self, messages):
+        self.started.set()
+        try:
+            await self.gate.wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        self.completed = True
+        return BatchOutcome(len(messages), 0, 0, len(messages), 0)
+
+
+class OneMessageQueue(IdleQueue):
+    async def receive(self, max_messages, wait_seconds):
+        await asyncio.sleep(0)
+        return [ReceivedMessage("m1", "r1", "{}")]
+
+
+async def test_batch_finishing_within_grace_completes_and_is_not_cancelled(settings, meter):
+    processor = GatedProcessor()
+    engine = FakeEngine()
+    consumer = Consumer(OneMessageQueue(), processor, wait_seconds=0, window_seconds=0.001)
+    serving = Serving(fake_runtime(settings, meter, OneMessageQueue(), consumer, engine))
+    base = await serving.base()
+    await asyncio.wait_for(processor.started.wait(), timeout=2)
+    serving.stop.set()
+    await asyncio.sleep(0.02)  # well inside the 0.2 s grace
+    assert not serving.task.done()  # serve() is waiting for the in-hand batch
+    processor.gate.set()
+    await asyncio.wait_for(serving.task, timeout=2)
+    assert processor.completed and not processor.cancelled
+    assert engine.disposed
+    with pytest.raises(httpx.ConnectError):
+        await status(base, "/healthz")
+
+
+async def test_batch_exceeding_grace_is_cancelled_then_server_closed_and_engine_disposed(
+    settings, meter
+):
+    processor = GatedProcessor()  # gate never opened
+    engine = FakeEngine()
+    consumer = Consumer(OneMessageQueue(), processor, wait_seconds=0, window_seconds=0.001)
+    serving = Serving(fake_runtime(settings, meter, OneMessageQueue(), consumer, engine))
+    base = await serving.base()
+    await asyncio.wait_for(processor.started.wait(), timeout=2)
+    await serving.finish()
+    assert processor.cancelled and not processor.completed
+    assert engine.disposed
+    with pytest.raises(httpx.ConnectError):
+        await status(base, "/healthz")

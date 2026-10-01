@@ -82,7 +82,12 @@ async def poll_queue_depth(
         await sleep(interval)
 
 
-async def serve(runtime: Runtime, stop: asyncio.Event) -> None:
+async def serve(
+    runtime: Runtime,
+    stop: asyncio.Event,
+    *,
+    on_started: Callable[[asyncio.Server], None] | None = None,
+) -> None:
     settings = runtime.settings
     stale_after = max(10.0, 3.0 * settings.receive_wait_seconds)
     consumer_task = asyncio.create_task(runtime.consumer.run(stop), name="consumer")
@@ -111,6 +116,8 @@ async def serve(runtime: Runtime, stop: asyncio.Event) -> None:
     server = await start_health_server(
         settings.health_host, settings.health_port, live=live, ready=ready
     )
+    if on_started is not None:
+        on_started(server)
     try:
         await stop.wait()
     finally:
