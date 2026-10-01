@@ -34,3 +34,11 @@ def test_direct_marker_is_spec_value():
 def test_very_long_hosts_are_truncated():
     host = "a" * 300 + ".example"
     assert referrer_host(f"https://{host}/") == host[:MAX_HOST_LENGTH]
+
+
+@pytest.mark.parametrize(
+    "referrer", ["http://a\x00b.com/", "http://a\x1fb.com/", "http://a\x7fb.com/"]
+)
+def test_hosts_with_control_characters_are_direct(referrer):
+    # Postgres text columns reject NUL; such a host must never reach the upsert.
+    assert referrer_host(referrer) == DIRECT

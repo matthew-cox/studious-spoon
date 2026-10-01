@@ -14,7 +14,7 @@ class ProcessorSettings(BaseSettings):
     click_events_dlq_name: str = "click-events-dlq"
     batch_max_messages: int = Field(default=100, ge=1, le=1000)
     batch_window_seconds: float = Field(default=1.0, gt=0)
-    receive_wait_seconds: int = Field(default=20, ge=0, le=20)  # SQS long-poll maximum
+    receive_wait_seconds: int = Field(default=20, ge=1, le=20)  # SQS long-poll maximum
     queue_depth_interval_seconds: float = Field(default=30.0, gt=0)
     link_cache_ttl_seconds: float = Field(default=60.0, ge=0)
     health_host: str = "0.0.0.0"  # noqa: S104 — the container healthcheck / load balancer must reach it

@@ -33,3 +33,10 @@ def test_out_of_range_values_are_rejected(monkeypatch, name, value):
     monkeypatch.setenv(name, value)
     with pytest.raises(ValidationError):
         load_processor_settings()
+
+
+def test_receive_wait_of_zero_is_rejected_to_avoid_busy_polling(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", URL)
+    monkeypatch.setenv("RECEIVE_WAIT_SECONDS", "0")
+    with pytest.raises(ValidationError):
+        load_processor_settings()

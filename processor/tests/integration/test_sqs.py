@@ -94,6 +94,7 @@ async def test_end_to_end_batch_against_real_queue_and_db(
 
     assert outcome is not None
     assert (outcome.ok, outcome.invalid) == (4, 1)
+    assert (outcome.deleted, outcome.delete_failures) == (4, 0)
     with migrated.connect("migrator") as conn:
         assert conn.execute("SELECT sum(count) FROM analytics.link_clicks_hourly").fetchone() == (
             4,

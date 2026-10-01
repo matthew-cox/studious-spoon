@@ -67,6 +67,8 @@ class PostgresRollupStore:
             await conn.execute(
                 sa.update(pipeline_status)
                 .where(pipeline_status.c.id == 1)
-                .values(last_committed_at=now)
+                .values(
+                    last_committed_at=sa.func.greatest(pipeline_status.c.last_committed_at, now)
+                )
             )
         return CommitResult(committed_links=existing, skipped_links=frozenset(skipped))

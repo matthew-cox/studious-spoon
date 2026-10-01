@@ -57,6 +57,22 @@ async def test_build_runtime_without_network(settings):
     await built.engine.dispose()
 
 
+def test_engine_has_connect_and_statement_timeouts(settings, monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_create(url, **kwargs):
+        captured.update(kwargs)
+        return create_async_engine(url)
+
+    monkeypatch.setattr("shortener_processor.main.create_async_engine", fake_create)
+    build_runtime(settings)
+    assert captured["connect_args"] == {
+        "connect_timeout": 5,
+        "options": "-c statement_timeout=20000",
+    }
+    assert captured["pool_pre_ping"] is True
+
+
 async def test_poll_queue_depth_records_both_queues(settings, meter, metric_value):
     telemetry, stop, queue = ProcessorTelemetry(meter), asyncio.Event(), IdleQueue()
 

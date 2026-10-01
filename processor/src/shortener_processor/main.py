@@ -38,7 +38,13 @@ def build_runtime(settings: ProcessorSettings) -> Runtime:
     telemetry = ProcessorTelemetry(
         configure_meter_provider(settings).get_meter("shortener_processor")
     )
-    engine = create_async_engine(str(settings.database_url), pool_pre_ping=True)
+    engine = create_async_engine(
+        str(settings.database_url),
+        pool_pre_ping=True,
+        # A blackholed DB must fail fast, and a slow commit must stay inside the 30 s
+        # SQS visibility timeout.
+        connect_args={"connect_timeout": 5, "options": "-c statement_timeout=20000"},
+    )
     sqs = boto3.client(
         "sqs",
         region_name=settings.aws_region,

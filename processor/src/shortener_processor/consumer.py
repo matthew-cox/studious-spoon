@@ -50,7 +50,15 @@ class Consumer:
             if deadline is not None and self._monotonic() >= deadline:
                 break
             wanted = min(SQS_MAX_PER_RECEIVE, self._max - len(batch))
-            received = await self._queue.receive(wanted, self._wait if not batch else 1)
+            try:
+                received = await self._queue.receive(wanted, self._wait if not batch else 1)
+            except Exception:
+                if not batch:
+                    raise
+                # Don't drop messages in hand (they'd come back with bumped receive counts).
+                logger.warning("follow-up receive failed; processing %d in hand", len(batch),
+                               exc_info=True)  # fmt: skip
+                break
             self._heartbeat = self._monotonic()
             if not batch:
                 if not received:
@@ -67,6 +75,7 @@ class Consumer:
 
     async def run(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
+            self._heartbeat = self._monotonic()  # alive even while SQS/DB are failing
             try:
                 await self.run_once()
             except Exception:  # the loop must outlive any one batch (spec §9)

@@ -3,7 +3,13 @@
 from urllib.parse import urlsplit
 
 DIRECT = "(direct)"
+_DEL = 0x7F
 MAX_HOST_LENGTH = 255
+
+
+def has_control_char(text: str) -> bool:
+    """True if `text` holds a C0 control character or DEL (Postgres rejects NUL in text)."""
+    return any(ord(ch) < 0x20 or ord(ch) == _DEL for ch in text)
 
 
 def referrer_host(referrer: str | None) -> str:
@@ -15,4 +21,6 @@ def referrer_host(referrer: str | None) -> str:
     except ValueError:  # e.g. malformed IPv6 brackets
         return DIRECT
     host = (host or "").rstrip(".")
-    return host[:MAX_HOST_LENGTH] if host else DIRECT
+    if not host or has_control_char(host):
+        return DIRECT
+    return host[:MAX_HOST_LENGTH]

@@ -11,7 +11,7 @@ from shortener_events import ClickEvent, InvalidEventError, SqsMessage, decode
 from shortener_processor.aggregate import ResolvedClick, aggregate
 from shortener_processor.link_resolver import LinkResolver
 from shortener_processor.queue import QueueClient, ReceivedMessage
-from shortener_processor.referrers import referrer_host
+from shortener_processor.referrers import has_control_char, referrer_host
 from shortener_processor.rollup_store import CommitResult, RollupStore
 from shortener_processor.telemetry import ProcessorTelemetry
 
@@ -66,6 +66,13 @@ class BatchProcessor:
                     "invalid click message %s left for redrive: %s", message.message_id, exc
                 )
                 continue
+            if has_control_char(event.code):  # would abort the whole commit in Postgres
+                invalid += 1
+                logger.warning(
+                    "click message %s has control characters in its code; left for redrive",
+                    message.message_id,
+                )
+                continue
             if event.event_id in seen:
                 duplicates.append(message)
                 continue
@@ -103,12 +110,6 @@ class BatchProcessor:
         committed = [(m, e) for m, e, link_id in located if link_id not in result.skipped_links]
         unknown += [m for m, _, link_id in located if link_id in result.skipped_links]
 
-        self._telemetry.messages.add(len(committed), {"result": "ok"})
-        self._telemetry.messages.add(invalid, {"result": "invalid"})
-        self._telemetry.messages.add(len(unknown), {"result": "unknown_link"})
-        for _, event in committed:
-            self._telemetry.event_lag.record(max(0.0, (now - event.occurred_at).total_seconds()))
-
         handles = [m.receipt_handle for m, _ in committed]
         handles += [m.receipt_handle for m in unknown + duplicates]
         failed = await self._queue.delete(handles) if handles else []
@@ -116,6 +117,12 @@ class BatchProcessor:
             logger.warning(
                 "%d processed messages could not be deleted; they will be recounted", len(failed)
             )
+        # Nothing sits between commit and delete; metrics are recorded afterwards.
+        self._telemetry.messages.add(len(committed), {"result": "ok"})
+        self._telemetry.messages.add(invalid, {"result": "invalid"})
+        self._telemetry.messages.add(len(unknown), {"result": "unknown_link"})
+        for _, event in committed:
+            self._telemetry.event_lag.record(max(0.0, (now - event.occurred_at).total_seconds()))
         self._telemetry.batch_duration.record(self._perf_counter() - started)
         return BatchOutcome(
             ok=len(committed),

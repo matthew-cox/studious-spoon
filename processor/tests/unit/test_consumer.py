@@ -123,3 +123,54 @@ async def test_heartbeat_tracks_the_last_receive():
     await consumer.collect()
     clock.now += 5
     assert consumer.seconds_since_heartbeat() == pytest.approx(5.0)
+
+
+class FlakyFollowUpQueue(ScriptedQueue):
+    """First receive returns messages; every later receive raises."""
+
+    async def receive(self, max_messages, wait_seconds):
+        if self.calls:
+            self.calls.append((max_messages, wait_seconds))
+            raise ConnectionError("sqs blip")
+        return await super().receive(max_messages, wait_seconds)
+
+
+async def test_failing_follow_up_receive_still_processes_the_messages_in_hand():
+    clock = FakeClock()
+    processor = RecordingProcessor()
+    queue = FlakyFollowUpQueue([msgs(0, 10)], clock)
+    outcome = await Consumer(queue, processor, monotonic=clock).run_once()
+    assert outcome is not None and outcome.ok == 10
+    assert len(processor.batches[0]) == 10
+
+
+async def test_failing_first_receive_propagates():
+    class Broken(ScriptedQueue):
+        async def receive(self, max_messages, wait_seconds):
+            raise ConnectionError("sqs down")
+
+    clock = FakeClock()
+    with pytest.raises(ConnectionError):
+        await Consumer(Broken([], clock), RecordingProcessor(), monotonic=clock).collect()
+
+
+async def test_heartbeat_stays_fresh_while_every_receive_fails():
+    clock = FakeClock()
+    stop = asyncio.Event()
+    ages: list[float] = []
+
+    class AlwaysFailing(ScriptedQueue):
+        async def receive(self, max_messages, wait_seconds):
+            ages.append(consumer.seconds_since_heartbeat())
+            raise ConnectionError("sqs outage")
+
+    async def sleep(seconds: float) -> None:
+        clock.now += 30.0  # an outage far longer than any staleness limit
+        if len(ages) == 3:
+            stop.set()
+
+    consumer = Consumer(
+        AlwaysFailing([], clock), RecordingProcessor(), monotonic=clock, sleep=sleep
+    )
+    await consumer.run(stop)
+    assert ages == [0.0, 0.0, 0.0]

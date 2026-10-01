@@ -173,3 +173,29 @@ async def test_empty_batch_is_a_no_op(make):
     outcome = await processor.process([])
     assert (store.commits, queue.deleted, resolver.calls) == ([], [], [])
     assert outcome.ok == 0
+
+
+async def test_control_character_code_is_invalid_and_does_not_poison_the_batch(make, metric_value):
+    processor, queue, _, store = make()
+    outcome = await processor.process([message(1), message(2, code="a\x00b"), message(3)])
+    assert sorted(queue.deleted) == ["r1", "r3"]  # the NUL message stays on the queue
+    assert (outcome.ok, outcome.invalid, outcome.deleted) == (2, 1, 2)
+    assert store.commits[0][0].hourly == {(A, datetime(2026, 10, 1, 12, tzinfo=UTC)): 2}
+    assert metric_value("shortener.processor.messages", {"result": "invalid"}) == 1
+
+
+async def test_nothing_is_recorded_between_commit_and_delete(meter, metric_value):
+    seen: list[float] = []
+
+    class SnoopingQueue(FakeQueue):
+        async def delete(self, receipt_handles):
+            seen.append(metric_value("shortener.processor.messages"))
+            return await super().delete(receipt_handles)
+
+    processor = BatchProcessor(
+        SnoopingQueue(), FakeResolver({}), FakeStore(), ProcessorTelemetry(meter),
+        clock=lambda: NOW,
+    )  # fmt: skip
+    await processor.process([message(1)])
+    assert seen == [0.0]  # metrics are recorded only after the delete returned
+    assert metric_value("shortener.processor.messages", {"result": "ok"}) == 1

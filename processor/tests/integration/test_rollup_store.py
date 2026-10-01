@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -56,3 +56,12 @@ async def test_commit_with_only_unknown_links_still_succeeds(processor_engine, m
     )
     assert result.skipped_links == {gone}
     assert rows(migrated, "SELECT count(*) FROM analytics.link_clicks_hourly") == [(0,)]
+
+
+async def test_last_committed_at_never_goes_backwards(processor_engine, insert_link, migrated):
+    link = insert_link()
+    store = PostgresRollupStore(processor_engine)
+    later, earlier = NOW + timedelta(minutes=5), NOW
+    await store.commit(RollupDeltas(hourly={(link, H12): 1}), later)
+    await store.commit(RollupDeltas(hourly={(link, H12): 1}), earlier)  # a lagging replica
+    assert rows(migrated, "SELECT last_committed_at FROM analytics.pipeline_status") == [(later,)]
