@@ -42,3 +42,19 @@ def test_configure_logging_writes_json_to_stdout_and_captures_uvicorn(capsys):
     out = capsys.readouterr().out.strip().splitlines()
     assert [json.loads(line)["message"] for line in out] == ["GET / 200"]
     assert logging.getLogger("uvicorn.access").propagate is True
+
+
+def test_uvicorn_access_line_drops_the_query_string(capsys):
+    configure_logging("shortener-admin", level="INFO")
+    logging.getLogger("uvicorn.access").info(
+        '%s - "%s %s HTTP/%s" %d',
+        "127.0.0.1:1234",
+        "GET",
+        "/auth/callback?code=SECRETCODE&state=SECRETSTATE",
+        "1.1",
+        400,
+    )
+    out = capsys.readouterr().out
+    message = json.loads(out.strip().splitlines()[-1])["message"]
+    assert message == '127.0.0.1:1234 - "GET /auth/callback HTTP/1.1" 400'
+    assert "SECRETCODE" not in out and "SECRETSTATE" not in out

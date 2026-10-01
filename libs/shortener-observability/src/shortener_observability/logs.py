@@ -11,6 +11,19 @@ from opentelemetry import trace
 _UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 
 
+class RedactAccessQuery(logging.Filter):
+    """Drop the query string from uvicorn access lines: OIDC callbacks carry code and state.
+
+    uvicorn logs '%s - "%s %s HTTP/%s" %d' with args (client, method, path_with_query, ...).
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
+            record.args = (*args[:2], args[2].split("?", 1)[0], *args[3:])
+        return True
+
+
 class JsonFormatter(logging.Formatter):
     def __init__(self, service_name: str) -> None:
         super().__init__()
@@ -50,3 +63,6 @@ def configure_logging(
         logger = logging.getLogger(name)
         logger.handlers.clear()
         logger.propagate = True
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, RedactAccessQuery) for f in access.filters):
+        access.addFilter(RedactAccessQuery())
