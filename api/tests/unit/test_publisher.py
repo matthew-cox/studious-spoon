@@ -132,3 +132,66 @@ async def test_in_memory_publisher_records_events():
     publisher.publish(event(1))
     await publisher.stop()
     assert publisher.events == [event(1)]
+
+
+class SignallingSender:
+    """Records calls, signals each one, and hangs on calls after `ok_calls` successful ones."""
+
+    def __init__(self, outcomes=None) -> None:
+        self.called = asyncio.Event()
+        self.calls: list[list[SqsMessage]] = []
+        self._outcomes = list(outcomes or [])
+
+    async def send(self, messages):
+        self.calls.append(list(messages))
+        self.called.set()
+        if not self._outcomes:
+            await asyncio.Event().wait()
+        return self._outcomes.pop(0)
+
+
+async def test_stop_counts_the_batch_cancelled_mid_send_exactly_once(make_publisher, metric_value):
+    sender = SignallingSender()
+    publisher = make_publisher(sender, drain_timeout=0.01)
+    await publisher.start()
+    for n in range(3):
+        publisher.publish(event(n))
+    await asyncio.wait_for(sender.called.wait(), 1)  # the loop now holds all three
+    await publisher.stop()
+    assert metric_value("shortener.click_events.dropped", {"reason": "shutdown"}) == 3
+
+
+async def test_shutdown_drop_excludes_entries_already_published(make_publisher, metric_value):
+    sender = SignallingSender(outcomes=[[1]])  # first send: entry 1 fails; the retry hangs
+    publisher = make_publisher(sender, drain_timeout=0.01)
+    await publisher.start()
+    for n in range(3):
+        publisher.publish(event(n))
+    async with asyncio.timeout(1):
+        while len(sender.calls) < 2:
+            await asyncio.sleep(0)
+    await publisher.stop()
+    assert metric_value("shortener.click_events.published") == 2
+    assert metric_value("shortener.click_events.dropped", {"reason": "shutdown"}) == 1
+
+
+async def test_loop_survives_an_unexpected_error(make_publisher):
+    calls = 0
+
+    async def flaky_sleep(delay: float) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("boom")
+        await asyncio.sleep(0)
+
+    sender = SignallingSender(outcomes=[[]])
+    publisher = make_publisher(sender, sleep=flaky_sleep)
+    await publisher.start()
+    async with asyncio.timeout(1):
+        while calls < 2:  # the loop hit the error and went round again
+            await asyncio.sleep(0)
+        publisher.publish(event(1))
+        await sender.called.wait()
+    await publisher.stop()
+    assert [decode(m).event_id for m in sender.calls[0]] == ["e1"]

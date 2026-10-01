@@ -91,7 +91,7 @@ class BufferedClickPublisher:
         self._sleep = sleep
         self._jitter = jitter
         self._task: asyncio.Task[None] | None = None
-        self._in_flight = 0  # events taken off the queue but not yet resolved (for shutdown)
+        self._in_flight = 0  # events taken off the queue and still unresolved (for shutdown)
         telemetry.observe_buffer_size(self._queue.qsize)
 
     def publish(self, event: ClickEvent) -> None:
@@ -115,6 +115,7 @@ class BufferedClickPublisher:
     async def _send_with_retries(self, batch: list[ClickEvent]) -> None:
         pending = batch
         for attempt in range(1, self._max_attempts + 1):
+            self._in_flight = len(pending)
             try:
                 failed = await self._sender.send([encode(event) for event in pending])
             except Exception:  # any transport failure; the redirect path must never see it
@@ -122,10 +123,12 @@ class BufferedClickPublisher:
                 failed = list(range(len(pending)))
             self._telemetry.click_events_published.add(len(pending) - len(failed))
             pending = [pending[index] for index in failed]
+            self._in_flight = len(pending)  # published entries are resolved
             if not pending:
                 return
             if attempt < self._max_attempts:
                 await self._sleep(self._backoff(attempt))
+        self._in_flight = 0
         self._telemetry.click_events_dropped.add(len(pending), {"reason": "publish_failed"})
 
     async def flush_once(self) -> int:
@@ -133,28 +136,40 @@ class BufferedClickPublisher:
         if batch:
             self._in_flight = len(batch)
             await self._send_with_retries(batch)  # if cancelled here, _in_flight stays counted
-            self._in_flight = 0
         return len(batch)
 
     async def run(self) -> None:
         while True:
-            if await self.flush_once() < BATCH_SIZE:
-                await self._sleep(self._flush_interval)
+            try:
+                if await self.flush_once() < BATCH_SIZE:
+                    await self._sleep(self._flush_interval)
+            except Exception:  # keep publishing; clicks must not stop until restart
+                logger.exception("click publisher loop error")
+                if self._in_flight:  # the batch it was holding is gone
+                    self._telemetry.click_events_dropped.add(
+                        self._in_flight, {"reason": "publish_failed"}
+                    )
+                    self._in_flight = 0
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self.run(), name="click-publisher")
 
     async def stop(self) -> None:
+        lost = 0
         if self._task is not None:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+            lost = self._in_flight  # the batch the cancelled send still held
+            self._in_flight = 0
         try:
             async with asyncio.timeout(self._drain_timeout):
                 while await self.flush_once():
                     pass
         except TimeoutError:
             pass
-        if lost := self._queue.qsize() + self._in_flight:
-            self._telemetry.click_events_dropped.add(lost, {"reason": "shutdown"})
+        except Exception:  # shutdown must still finish its accounting
+            logger.exception("click publisher drain failed")
+        if total := lost + self._in_flight + self._queue.qsize():
+            self._telemetry.click_events_dropped.add(total, {"reason": "shutdown"})
