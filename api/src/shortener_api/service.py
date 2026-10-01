@@ -126,3 +126,26 @@ class LinkService:
         await self._visible(principal, link_id, Action.DELETE)
         if not await self._repo.delete(link_id, require_unblocked=not principal.is_admin):
             await self._raise_current_state(link_id)
+
+    async def block(self, principal: Principal, link_id: UUID, reason: str) -> Link:
+        await self._visible(principal, link_id, Action.BLOCK)
+        blocked = await self._repo.block(
+            link_id, by=principal.sub, reason=reason, now=self._clock.now()
+        )
+        if blocked is None:
+            if await self._repo.get(link_id) is None:
+                raise _not_found()
+            raise ProblemError(409, "Link is already blocked")
+        self._telemetry.links_blocked.add(1)
+        logger.info("link %s blocked by %s", link_id, principal.sub)
+        return blocked
+
+    async def unblock(self, principal: Principal, link_id: UUID) -> Link:
+        await self._visible(principal, link_id, Action.BLOCK)
+        unblocked = await self._repo.unblock(link_id, now=self._clock.now())
+        if unblocked is None:
+            if await self._repo.get(link_id) is None:
+                raise _not_found()
+            raise ProblemError(409, "Link is not blocked")
+        logger.info("link %s unblocked by %s", link_id, principal.sub)
+        return unblocked
