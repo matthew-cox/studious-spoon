@@ -11,12 +11,11 @@ and OpenTelemetry. Runs entirely locally; designed to map onto AWS (see the spec
 - Docker with Compose v2 (Docker Desktop, or colima: `colima start --cpu 4 --memory 8`)
 - [uv](https://docs.astral.sh/uv/) 0.12+
 
-colima users: integration tests use testcontainers, which needs:
-
-```bash
-export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
-export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
-```
+Integration tests use testcontainers. `make test` / `make check` / `make e2e` (and
+`scripts/test.sh <pytest args>`) detect your Docker runtime from the active Docker context
+(`scripts/docker-env.sh`) and set what testcontainers needs. colima, for example, also needs
+`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`. Values you've already exported win. Running plain
+`uv run pytest` outside those wrappers? `. scripts/docker-env.sh` first.
 
 ## Quickstart
 
@@ -94,4 +93,4 @@ make fmt      # auto-format and fix lint
 - **Realm changes not applied:** Keycloak imports the realm only when it doesn't exist. Run `make down && make up`.
 - **Changed a password or the Keycloak admin in `.env`:** Postgres roles and the Keycloak bootstrap admin are created once per data volume. Run `make down && make up` to recreate them.
 - **`Account is not fully set up` on login:** the user is missing email/first/last name in `users.yaml`.
-- **Testcontainers can't find Docker (colima):** export the two variables above.
+- **Testcontainers can't find Docker:** check the `docker-env:` line printed by `make test`; it names the runtime and socket it detected (`docker context ls` shows the active context).

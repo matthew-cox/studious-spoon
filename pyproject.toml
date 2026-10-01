@@ -34,7 +34,7 @@ shortener-testing = { workspace = true }
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["docs"]
+extend-exclude = ["docs", "scripts/*.sh"]  # shell helpers; scripts/* is otherwise linted as Python
 extend-include = ["scripts/*"]
 src = [
   "libs/shortener-events/src",

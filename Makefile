@@ -7,6 +7,9 @@ export GIT_SHA
 PURE_MODULES := */shortener_events/*,*/keycloak_tools/users.py,*/keycloak_tools/plan.py,*/shortener_api/policy.py,*/shortener_api/codes.py,*/shortener_api/urls.py,*/shortener_api/stats.py,*/shortener_processor/referrers.py,*/shortener_processor/aggregate.py,*/shortener_admin/security.py
 MYPY_TARGETS := libs/shortener-events/src api/src tools/keycloak-tools/src processor/src admin/src
 
+# Detects the Docker runtime for testcontainers (colima needs a socket override).
+DOCKER_ENV := . scripts/docker-env.sh &&
+
 # `make token USER=eddie`; USER is also a shell env var, so only honor it from the command line.
 TOKEN_USER = $(if $(filter command line,$(origin USER)),$(USER),alice)
 
@@ -27,7 +30,7 @@ typecheck:
 	uv run mypy $(MYPY_TARGETS)
 
 test:
-	uv run pytest --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+	$(DOCKER_ENV) uv run pytest --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=80
 	uv run coverage report --include='$(PURE_MODULES)' --fail-under=90
 
 check: lint typecheck test
@@ -57,4 +60,4 @@ token:
 	@scripts/token $(TOKEN_USER)
 
 e2e:
-	uv run pytest -m e2e tests/e2e -v
+	$(DOCKER_ENV) uv run pytest -m e2e tests/e2e -v
