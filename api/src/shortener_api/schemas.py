@@ -1,8 +1,15 @@
-from datetime import datetime
-from typing import Annotated, Self
+from datetime import UTC, datetime
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    StringConstraints,
+    model_validator,
+)
 
 from shortener_api.links_repo import Link, LinkStatus, Page
 
@@ -76,3 +83,44 @@ class LinkPage(BaseModel):
             page=page.page,
             page_size=page.page_size,
         )
+
+
+UtcDatetime = Annotated[
+    datetime,
+    PlainSerializer(lambda v: v.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), return_type=str),
+]
+
+
+class SeriesPoint(BaseModel):
+    ts: UtcDatetime
+    count: int
+
+
+class ReferrerCount(BaseModel):
+    referrer_host: str
+    count: int
+
+
+class LinkStatsOut(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    total: int
+    bucket: Literal["hour", "day"]
+    from_: UtcDatetime = Field(serialization_alias="from")
+    to: UtcDatetime
+    series: list[SeriesPoint]
+    top_referrers: list[ReferrerCount]
+    data_as_of: UtcDatetime | None
+
+
+class TopLinkOut(BaseModel):
+    id: UUID
+    code: str
+    clicks_7d: int
+
+
+class SummaryOut(BaseModel):
+    link_count: int
+    clicks_7d: int
+    top_links: list[TopLinkOut]
+    data_as_of: UtcDatetime | None

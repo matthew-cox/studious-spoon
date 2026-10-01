@@ -192,3 +192,36 @@ def sqs_client(elasticmq: str) -> Any:
     url = client.get_queue_url(QueueName="click-events")["QueueUrl"]
     client.purge_queue(QueueUrl=url)
     return client
+
+
+@pytest.fixture
+def insert_clicks(migrated: PgServer) -> Callable[..., None]:
+    def _insert(link_id: UUID, bucket_start: Any, count: int) -> None:
+        with migrated.connect("migrator") as conn:
+            conn.execute(
+                "INSERT INTO analytics.link_clicks_hourly VALUES (%s, %s, %s)",
+                (link_id, bucket_start, count),
+            )
+
+    return _insert
+
+
+@pytest.fixture
+def insert_referrer(migrated: PgServer) -> Callable[..., None]:
+    def _insert(link_id: UUID, bucket_date: Any, host: str, count: int) -> None:
+        with migrated.connect("migrator") as conn:
+            conn.execute(
+                "INSERT INTO analytics.link_referrers_daily VALUES (%s, %s, %s, %s)",
+                (link_id, bucket_date, host, count),
+            )
+
+    return _insert
+
+
+@pytest.fixture
+def set_data_as_of(migrated: PgServer) -> Callable[[Any], None]:
+    def _set(value: Any) -> None:
+        with migrated.connect("migrator") as conn:
+            conn.execute("UPDATE analytics.pipeline_status SET last_committed_at = %s", (value,))
+
+    return _set
