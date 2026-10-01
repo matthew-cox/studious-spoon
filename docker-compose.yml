@@ -24,5 +24,20 @@ services:
       timeout: 3s
       retries: 20
 
+  migrate:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    image: shortener-api:${GIT_SHA:-dev}
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      MIGRATOR_DATABASE_URL: postgresql+psycopg://migrator:${MIGRATOR_DB_PASSWORD}@postgres:5432/shortener
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
 volumes:
   pgdata:
