@@ -484,7 +484,7 @@ Written test-first (TDD).
 | Integration (admin) | Routes, session store, refresh, CSRF, HTMX fragments | API mocked with `respx`; real Postgres for `admin.sessions`; OIDC callback stubbed. |
 | E2E smoke | The full compose stack | `make e2e` (pytest, `-m e2e`): real tokens via `shortener-dev` for seeded users. Scenario: eddie creates a link → erin gets `404` on it → following it returns `302` → **poll stats until total = 1 (timeout 15 s)** → alice blocks it → eddie's `PATCH` gets `409` → the redirect returns `410` and stats total stays 1 → victor can read it but gets `403` on create → nora gets `403`. |
 
-**CI (GitHub Actions):** `ruff check`, `ruff format --check`, unit + integration tests for all packages, and Docker image builds. E2E runs locally only for now.
+**CI (GitHub Actions):** the quality gates in §15.2 (`ruff check`, `ruff format --check`, `mypy --strict`, coverage thresholds), unit + integration tests for all packages, and Docker image builds. E2E runs locally only for now.
 
 ## 14. Success Criteria
 
@@ -495,3 +495,49 @@ Written test-first (TDD).
 - An admin block is enforced as described in §4.3 and can't be bypassed by the owner.
 - A UI action can be followed as a single trace in Grafana/Tempo, with correlated logs. A click's processing span links back to its redirect span. The Overview dashboard shows redirect and pipeline metrics.
 - `make test` and `make e2e` pass; CI is green.
+
+## 15. Engineering Constraints
+
+These constraints apply to every task in the implementation plan.
+
+### 15.1 Twelve-Factor
+
+| Factor | Constraint for this system |
+|---|---|
+| I. Codebase | One repo (uv workspace) with three separately deployable services (`api`, `admin`, `click-processor`). Each service has its own Dockerfile, image, and `service.version`. |
+| II. Dependencies | Commit `uv.lock`. Images install with `uv sync --frozen`. All base images and compose images are pinned to a version (never `:latest`). |
+| III. Config | **Configuration comes only from environment variables**, through one `pydantic-settings` class per service. Missing or invalid config **stops the service at startup**. No `if env == "prod"` branches; behavior changes only through explicit settings. `.env.example` documents every variable. The only secrets in the repo are dev-only ones that are clearly labeled (realm user passwords, the `shortener-admin` client secret). |
+| IV. Backing services | Postgres, SQS, Keycloak, and the OTEL collector are reached only through URLs from config. Switching ElasticMQ to SQS, or Keycloak to Cognito, is a config change. |
+| V. Build / release / run | Build an image once and promote the same image everywhere. The git SHA is baked in as `service.version`. **Migrations run as a separate release step (the `migrate` job), never when an app starts.** |
+| VI. Processes | Services keep no state of their own and never write to local disk. Sessions live in Postgres. The single documented exception is the publisher's in-memory buffer (accepted loss, §5.2). |
+| VII. Port binding | Each service runs its own server (uvicorn), with the port taken from config. |
+| VIII. Concurrency | Scale by running more copies of a process. Nothing assumes there's only one copy. The processor is safe to run as N copies (D13). |
+| IX. Disposability | Fast startup, and a clean shutdown on SIGTERM. The API drains its publisher for up to 5 s. The processor stops receiving, finishes or abandons the current batch, and **never deletes a message it hasn't committed**. ECS's `stopTimeout` must be longer than these drain times. |
+| X. Dev/prod parity | Same Postgres major version and the same Keycloak image everywhere. ElasticMQ is chosen because it's API-compatible with SQS. **No SQLite or other in-memory database stand-ins in tests.** |
+| XI. Logs | JSON to stdout as an event stream, with no log files. Exporting over OTLP is additional, not a replacement. |
+| XII. Admin processes | Migrations, `seed-users`, and dead-letter-queue redrive run as one-off commands from the **same image and code**, exposed as Make targets. |
+
+### 15.2 TDD and Code Structure
+
+- **Red → green → refactor for each behavior.** Every task in the plan starts with a failing test. Every bug fix starts with a failing regression test.
+- **Business logic is separate from frameworks:**
+  - `policy`, `codes`, `urls`, `aggregate`, and the event codec are plain functions.
+  - They **must not import** FastAPI, SQLAlchemy, boto, or httpx.
+  - They are tested as fast unit tests.
+- **Interfaces and fakes:**
+  - `ClickPublisher`, `RollupStore`, `LinkResolver`, the JWKS provider, `Clock`, and the random-number source used for short codes are injected (through FastAPI dependencies or constructors).
+  - Hand-written fakes are preferred over mocks.
+  - Mocks are used only at outside HTTP boundaries (`respx`).
+- **Deterministic tests:**
+  - Time comes from `Clock`, and code generation uses a seeded random source.
+  - No `sleep` in unit or integration tests.
+  - E2E tests poll with a timeout.
+- **Real infrastructure in integration tests:** testcontainers for Postgres and ElasticMQ.
+  - Each test gets its own isolated state: a transaction that's rolled back, or a truncate step.
+  - Tests must be safe to run in any order.
+- **Quality gates in CI:**
+  - `ruff check`
+  - `ruff format --check`
+  - `mypy --strict` on `src/` of every package
+  - **≥ 90% branch coverage on the pure business-logic modules** listed above, and **≥ 80% overall**, enforced with `pytest --cov --cov-fail-under`
+- **Definition of done for a task:** tests pass, the quality gates pass, there are no new unexplained `# type: ignore` or `noqa` comments, and the spec or README is updated if behavior changed.
