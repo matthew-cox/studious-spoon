@@ -22,6 +22,8 @@ class ProcessorSettings(BaseSettings):
     shutdown_grace_seconds: float = Field(default=25.0, gt=0)
     otel_exporter_otlp_endpoint: str | None = None
     deployment_environment: str = "local"
+    otel_metric_export_interval_ms: int = Field(default=10_000, ge=1_000)
+    log_level: str = "INFO"
     service_version: str = "dev"
 
 

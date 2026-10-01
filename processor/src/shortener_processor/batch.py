@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
+from opentelemetry import trace
+from opentelemetry.trace import Tracer
+
 from shortener_events import ClickEvent, InvalidEventError, SqsMessage, decode
+from shortener_observability import span_link_from_traceparent
 from shortener_processor.aggregate import ResolvedClick, aggregate
 from shortener_processor.link_resolver import LinkResolver
 from shortener_processor.queue import QueueClient, ReceivedMessage
@@ -41,6 +45,7 @@ class BatchProcessor:
         *,
         clock: Callable[[], datetime] = utc_now,
         perf_counter: Callable[[], float] = time.perf_counter,
+        tracer: Tracer | None = None,
     ) -> None:
         self._queue = queue
         self._resolver = resolver
@@ -48,6 +53,7 @@ class BatchProcessor:
         self._telemetry = telemetry
         self._clock = clock
         self._perf_counter = perf_counter
+        self._tracer = tracer or trace.get_tracer(__name__)
 
     def _decode(
         self, messages: Sequence[ReceivedMessage]
@@ -81,6 +87,24 @@ class BatchProcessor:
         return valid, duplicates, invalid
 
     async def process(self, messages: Sequence[ReceivedMessage]) -> BatchOutcome:
+        links = [
+            link
+            for message in messages
+            if (link := span_link_from_traceparent(message.attributes.get("traceparent")))
+            is not None
+        ]
+        with self._tracer.start_as_current_span(
+            "process click batch",
+            links=links,
+            attributes={
+                "messaging.system": "aws_sqs",
+                "messaging.destination.name": "click-events",
+                "messaging.batch.message_count": len(messages),
+            },
+        ):
+            return await self._process(messages)
+
+    async def _process(self, messages: Sequence[ReceivedMessage]) -> BatchOutcome:
         if not messages:
             return BatchOutcome(0, 0, 0, 0, 0)
         started = self._perf_counter()

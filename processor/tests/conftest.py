@@ -1,4 +1,5 @@
-from collections.abc import Callable
+import logging
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
@@ -47,3 +48,13 @@ def metric_value(metric_points: Callable[[str], list[Any]]) -> Callable[..., flo
         return total
 
     return _value
+
+
+@pytest.fixture(autouse=True)
+def _restore_logging() -> Iterator[None]:
+    """build_runtime() rewires the root logger (JSON handler); undo it after each test."""
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    yield
+    root.handlers[:] = handlers
+    root.setLevel(level)

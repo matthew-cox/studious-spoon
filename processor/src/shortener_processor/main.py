@@ -9,9 +9,12 @@ from dataclasses import dataclass
 
 import boto3
 import sqlalchemy as sa
+from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
+from opentelemetry.sdk.trace import TracerProvider
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from shortener_observability import configure_telemetry, instrument_engine
 from shortener_processor.batch import BatchProcessor
 from shortener_processor.consumer import Consumer
 from shortener_processor.health import start_health_server
@@ -20,7 +23,7 @@ from shortener_processor.queue import QueueClient
 from shortener_processor.rollup_store import PostgresRollupStore
 from shortener_processor.settings import ProcessorSettings, load_processor_settings
 from shortener_processor.sqs import SQS_CONFIG, SqsQueueClient
-from shortener_processor.telemetry import ProcessorTelemetry, configure_meter_provider
+from shortener_processor.telemetry import ProcessorTelemetry
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +35,22 @@ class Runtime:
     queue: QueueClient
     consumer: Consumer
     telemetry: ProcessorTelemetry
+    tracer_provider: TracerProvider | None = None
+    telemetry_shutdown: Callable[[], None] | None = None
+    uninstrument_engine: Callable[[], None] | None = None
 
 
-def build_runtime(settings: ProcessorSettings) -> Runtime:
-    telemetry = ProcessorTelemetry(
-        configure_meter_provider(settings).get_meter("shortener_processor")
+def build_runtime(settings: ProcessorSettings, *, install_globals: bool = True) -> Runtime:
+    telemetry = configure_telemetry(
+        service_name="shortener-click-processor",
+        service_version=settings.service_version,
+        environment=settings.deployment_environment,
+        otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+        metric_export_interval_ms=settings.otel_metric_export_interval_ms,
+        log_level=settings.log_level,
+        install_globals=install_globals,
     )
+    processor_telemetry = ProcessorTelemetry(telemetry.meter("shortener_processor"))
     engine = create_async_engine(
         str(settings.database_url),
         pool_pre_ping=True,
@@ -45,6 +58,13 @@ def build_runtime(settings: ProcessorSettings) -> Runtime:
         # SQS visibility timeout.
         connect_args={"connect_timeout": 5, "options": "-c statement_timeout=20000"},
     )
+    uninstrument_engine = instrument_engine(
+        engine.sync_engine, telemetry.tracer_provider, telemetry.meter_provider
+    )
+    if install_globals:  # botocore instrumentation patches the library globally
+        BotocoreInstrumentor().instrument(  # type: ignore[no-untyped-call]  # upstream is untyped
+            tracer_provider=telemetry.tracer_provider
+        )
     sqs = boto3.client(
         "sqs",
         region_name=settings.aws_region,
@@ -56,7 +76,8 @@ def build_runtime(settings: ProcessorSettings) -> Runtime:
         queue,
         PostgresLinkResolver(engine, ttl_seconds=settings.link_cache_ttl_seconds),
         PostgresRollupStore(engine),
-        telemetry,
+        processor_telemetry,
+        tracer=telemetry.tracer("shortener_processor"),
     )
     consumer = Consumer(
         queue,
@@ -66,7 +87,14 @@ def build_runtime(settings: ProcessorSettings) -> Runtime:
         wait_seconds=settings.receive_wait_seconds,
     )
     return Runtime(
-        settings=settings, engine=engine, queue=queue, consumer=consumer, telemetry=telemetry
+        settings=settings,
+        engine=engine,
+        queue=queue,
+        consumer=consumer,
+        telemetry=processor_telemetry,
+        tracer_provider=telemetry.tracer_provider,
+        telemetry_shutdown=telemetry.shutdown,
+        uninstrument_engine=uninstrument_engine,
     )
 
 
@@ -142,10 +170,13 @@ async def serve(
         server.close()
         await server.wait_closed()
         await runtime.engine.dispose()
+        if runtime.uninstrument_engine is not None:
+            runtime.uninstrument_engine()
+        if runtime.telemetry_shutdown is not None:
+            runtime.telemetry_shutdown()
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
     runtime = build_runtime(load_processor_settings())
 
     async def _run() -> None:

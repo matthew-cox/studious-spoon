@@ -10,7 +10,7 @@ from shortener_processor.consumer import Consumer
 from shortener_processor.main import Runtime, build_runtime, poll_queue_depth, serve
 from shortener_processor.queue import ReceivedMessage
 from shortener_processor.sqs import SqsQueueClient
-from shortener_processor.telemetry import ProcessorTelemetry, configure_meter_provider
+from shortener_processor.telemetry import ProcessorTelemetry
 
 
 class IdleQueue:
@@ -51,9 +51,13 @@ def runtime(settings, meter, queue, consumer) -> Runtime:
 
 
 async def test_build_runtime_without_network(settings):
-    built = build_runtime(settings)
+    built = build_runtime(settings, install_globals=False)
     assert isinstance(built.queue, SqsQueueClient)
     assert isinstance(built.consumer, Consumer)
+    assert built.tracer_provider is not None
+    assert built.tracer_provider.resource.attributes["service.name"] == "shortener-click-processor"
+    assert built.telemetry_shutdown is not None
+    built.telemetry_shutdown()
     await built.engine.dispose()
 
 
@@ -65,7 +69,7 @@ def test_engine_has_connect_and_statement_timeouts(settings, monkeypatch):
         return create_async_engine(url)
 
     monkeypatch.setattr("shortener_processor.main.create_async_engine", fake_create)
-    build_runtime(settings)
+    build_runtime(settings, install_globals=False)
     assert captured["connect_args"] == {
         "connect_timeout": 5,
         "options": "-c statement_timeout=20000",
@@ -121,13 +125,6 @@ async def test_shutdown_cancels_a_batch_that_exceeds_the_grace_period(settings, 
     stop.set()
     # grace is 0.2 s; the hanging batch is cancelled and serve returns well within 2 s
     await asyncio.wait_for(serving, timeout=2)
-
-
-def test_meter_provider_resource(settings):
-    provider = configure_meter_provider(settings)
-    attributes = provider._sdk_config.resource.attributes  # private: SDK has no public accessor
-    assert attributes["service.name"] == "shortener-click-processor"
-    provider.shutdown()
 
 
 # ---- liveness / readiness / shutdown behaviour (real loop, waits bounded <= 0.05 s) ----
