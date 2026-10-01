@@ -1,4 +1,5 @@
-from collections.abc import Callable, Iterator
+import random
+from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -8,7 +9,11 @@ import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from testcontainers.community.postgres import PostgresContainer
+
+from shortener_api.deps import AppDeps
+from shortener_api.settings import ApiSettings
 
 # Keep in sync with docker-compose.yml.
 POSTGRES_IMAGE = "postgres:16.10-alpine"
@@ -110,3 +115,28 @@ def insert_link(migrated: PgServer) -> Callable[..., UUID]:
         return UUID(str(row[0]))
 
     return _insert
+
+
+ISSUER = "http://localhost:8080/realms/shortener"
+
+
+@pytest.fixture
+def api_settings(migrated: PgServer) -> ApiSettings:
+    return ApiSettings(
+        database_url=migrated.url("api_user"),
+        public_base_url="http://sho.rt",
+        oidc_issuer=ISSUER,
+        oidc_internal_url="http://keycloak.invalid/realms/shortener",
+    )
+
+
+@pytest.fixture
+async def engine(api_settings: ApiSettings) -> AsyncIterator[AsyncEngine]:
+    engine = create_async_engine(str(api_settings.database_url))
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+def deps(api_settings, engine, clock) -> AppDeps:
+    return AppDeps(settings=api_settings, engine=engine, clock=clock, rng=random.Random(7))
