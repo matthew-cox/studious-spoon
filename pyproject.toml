@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 package = false
 
 [tool.uv.workspace]
-members = ["libs/shortener-events", "api", "tools/keycloak-tools"]
+members = ["libs/shortener-events", "libs/shortener-testing", "api", "tools/keycloak-tools"]
 
 [dependency-groups]
 dev = [
@@ -24,14 +24,24 @@ dev = [
   "ruff>=0.6",
   "types-PyYAML>=6.0",
   "boto3-stubs[sqs]>=1.35",
+  "shortener-testing",
 ]
+
+[tool.uv.sources]
+shortener-testing = { workspace = true }
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
 extend-exclude = ["docs"]
 extend-include = ["scripts/*"]
-src = ["libs/shortener-events/src", "api/src", "tools/keycloak-tools/src"]
+src = [
+  "libs/shortener-events/src",
+  "libs/shortener-testing/src",
+  "api/src",
+  "processor/src",
+  "tools/keycloak-tools/src",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S", "SIM", "RUF", "EXE"]

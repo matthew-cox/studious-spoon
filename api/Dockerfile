@@ -9,6 +9,7 @@ WORKDIR /src
 # Every workspace member's pyproject.toml must be listed here so uv can resolve the workspace.
 COPY pyproject.toml uv.lock .python-version ./
 COPY libs/shortener-events/pyproject.toml libs/shortener-events/
+COPY libs/shortener-testing/pyproject.toml libs/shortener-testing/
 COPY api/pyproject.toml api/
 COPY tools/keycloak-tools/pyproject.toml tools/keycloak-tools/
 RUN uv sync --frozen --no-dev --no-install-workspace --package shortener-api

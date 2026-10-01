@@ -12,6 +12,7 @@ members = [
     "platform-url-shortener",
     "shortener-api",
     "shortener-events",
+    "shortener-testing",
 ]
 
 [[package]]
@@ -1207,6 +1208,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "respx" },
     { name = "ruff" },
+    { name = "shortener-testing" },
     { name = "testcontainers" },
     { name = "types-pyyaml" },
 ]
@@ -1226,6 +1228,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=5.0" },
     { name = "respx", specifier = ">=0.21" },
     { name = "ruff", specifier = ">=0.6" },
+    { name = "shortener-testing", editable = "libs/shortener-testing" },
     { name = "testcontainers", extras = ["postgres"], specifier = ">=4.8" },
     { name = "types-pyyaml", specifier = ">=6.0" },
 ]
@@ -1701,6 +1704,27 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", specifier = ">=2.8" }]
+
+[[package]]
+name = "shortener-testing"
+version = "0.1.0"
+source = { editable = "libs/shortener-testing" }
+dependencies = [
+    { name = "alembic" },
+    { name = "boto3" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pytest" },
+    { name = "testcontainers" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "alembic", specifier = ">=1.13" },
+    { name = "boto3", specifier = ">=1.35" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "testcontainers", extras = ["postgres"], specifier = ">=4.8" },
+]
 
 [[package]]
 name = "six"
