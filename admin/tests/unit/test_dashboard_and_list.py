@@ -1,4 +1,5 @@
 import httpx
+import pytest
 
 SUMMARY = {
     "link_count": 3,
@@ -115,3 +116,24 @@ async def test_empty_list_message(client, mocks, ids, login_as):
     await login_as()
     mocks.get(f"{ids['API']}/api/v1/links").respond(json=page([]))
     assert "No links match" in (await client.get("/links")).text
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("²", "1"),
+        ("٣", "1"),
+        ("9" * 5000, "1"),
+        ("0", "1"),
+        ("-1", "1"),
+        ("abc", "1"),
+        ("1.5", "1"),
+        ("3", "3"),
+    ],
+)
+async def test_page_parsing_never_500s(client, mocks, ids, login_as, raw, expected):
+    await login_as()
+    route = mocks.get(f"{ids['API']}/api/v1/links").respond(json=page([]))
+    response = await client.get("/links", params={"page": raw})
+    assert response.status_code == 200
+    assert route.calls.last.request.url.params["page"] == expected

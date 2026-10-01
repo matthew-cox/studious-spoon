@@ -21,7 +21,13 @@ STATUSES = ("active", "disabled", "blocked")
 
 
 def _page_number(raw: str) -> int:
-    return int(raw) if raw.isdigit() and int(raw) >= 1 else 1
+    if not (raw.isascii() and raw.isdigit()):
+        return 1
+    try:
+        number = int(raw)
+    except ValueError:  # digit string beyond Python's int-conversion limit
+        return 1
+    return number if number >= 1 else 1
 
 
 @router.get("/links")
