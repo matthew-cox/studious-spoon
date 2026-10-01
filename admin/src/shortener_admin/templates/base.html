@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Shortener admin{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='vendor/pico.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+  <script src="{{ url_for('static', path='vendor/htmx.min.js') }}" defer></script>
+  <script src="{{ url_for('static', path='vendor/chart.umd.js') }}" defer></script>
+  <script src="{{ url_for('static', path='app.js') }}" defer></script>
+</head>
+<body hx-boost="true"{% if session %} hx-headers='{{ {"X-CSRF-Token": session.csrf_token} | tojson }}'{% endif %}>
+  <header class="container">
+    <nav>
+      <ul>
+        <li><strong><a href="/">Shortener</a></strong></li>
+        {% if session and session.has_access %}
+        <li><a href="/links">Links</a></li>
+        {% if session.can_create %}<li><a href="/links/new">New link</a></li>{% endif %}
+        {% endif %}
+      </ul>
+      {% if session %}
+      <ul>
+        <li>{{ session.username }} <small class="muted">({{ session.roles_label }})</small></li>
+        <li>
+          {# hx-boost off: logout ends on Keycloak (cross-origin), which an AJAX request cannot follow #}
+          <form method="post" action="/auth/logout" hx-boost="false" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+            <button type="submit" class="secondary outline">Sign out</button>
+          </form>
+        </li>
+      </ul>
+      {% endif %}
+    </nav>
+  </header>
+  <main class="container">{% block content %}{% endblock %}</main>
+</body>
+</html>

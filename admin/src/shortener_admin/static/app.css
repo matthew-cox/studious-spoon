@@ -1,0 +1,7 @@
+.badge { padding: 0.1rem 0.5rem; border-radius: 0.5rem; font-size: 0.8rem; }
+.badge.active { background: #d1fae5; color: #065f46; }
+.badge.disabled { background: #e5e7eb; color: #374151; }
+.badge.blocked { background: #fee2e2; color: #991b1b; }
+form.inline { display: inline; margin: 0; }
+.muted { color: var(--pico-muted-color); }
+td.target { max-width: 28rem; overflow-wrap: anywhere; }
