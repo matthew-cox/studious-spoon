@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import Request
@@ -24,3 +25,14 @@ def api_message(error: ApiError) -> str:
     if reason:
         return f"{error.title}: {reason}"
     return error.detail or error.title
+
+
+def chart_data(stats: dict[str, Any], bucket: str) -> dict[str, list[Any]]:
+    fmt = "%m-%d %H:00" if bucket == "hour" else "%Y-%m-%d"
+    labels: list[Any] = []
+    counts: list[Any] = []
+    for point in stats.get("series", []):
+        moment = datetime.fromisoformat(str(point["ts"]).replace("Z", "+00:00")).astimezone(UTC)
+        labels.append(moment.strftime(fmt))
+        counts.append(int(point["count"]))
+    return {"labels": labels, "counts": counts}

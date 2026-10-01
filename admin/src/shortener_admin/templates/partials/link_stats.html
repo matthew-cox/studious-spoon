@@ -1,0 +1,28 @@
+<div id="stats">
+{% if stats %}
+<form hx-get="/links/{{ link.id }}/stats" hx-target="#stats" hx-swap="outerHTML" hx-trigger="change">
+  <label>Range
+    <select name="bucket">
+      <option value="hour"{% if bucket == "hour" %} selected{% endif %}>Last 7 days, hourly</option>
+      <option value="day"{% if bucket == "day" %} selected{% endif %}>Last 30 days, daily</option>
+    </select>
+  </label>
+</form>
+<p><strong>{{ stats.total }}</strong> clicks</p>
+<canvas data-chart='{{ chart | tojson }}' height="120" aria-label="Clicks over time" role="img"></canvas>
+<h3>Top referrers</h3>
+{% if stats.top_referrers %}
+<table>
+  <thead><tr><th>Referrer</th><th>Clicks</th></tr></thead>
+  <tbody>
+  {% for row in stats.top_referrers %}<tr><td>{{ row.referrer_host }}</td><td>{{ row.count }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No referrers yet.</p>
+{% endif %}
+<p class="muted"><small>{% if stats.data_as_of %}Data as of {{ stats.data_as_of | as_of }}{% else %}No clicks processed yet{% endif %}</small></p>
+{% else %}
+<p class="muted">Stats are unavailable right now.</p>
+{% endif %}
+</div>

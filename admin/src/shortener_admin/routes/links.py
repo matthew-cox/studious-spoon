@@ -1,5 +1,6 @@
 import math
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import Annotated, Any
 from urllib.parse import urlencode
 from uuid import UUID
@@ -11,7 +12,7 @@ from shortener_admin.api_client import ApiError
 from shortener_admin.auth import require_access, verify_csrf_with_access
 from shortener_admin.deps import AdminDeps, get_deps
 from shortener_admin.sessions import Session
-from shortener_admin.views import api_message, is_htmx, render
+from shortener_admin.views import api_message, chart_data, is_htmx, render
 
 router = APIRouter()
 Deps = Annotated[AdminDeps, Depends(get_deps)]
@@ -46,6 +47,7 @@ async def list_links(
 
 
 Mutate = Annotated[Session, Depends(verify_csrf_with_access)]
+BUCKETS = ("hour", "day")
 PASS_THROUGH = {401, 503}  # handled app-wide: session expiry / API down
 
 
@@ -70,17 +72,27 @@ def _not_found(request: Request) -> HTMLResponse:
     return render(request, "error.html", status_code=404, title="Link not found", message="")
 
 
+async def _stats(
+    deps: AdminDeps, session: Session, link_id: str, bucket: str
+) -> dict[str, Any] | None:
+    start = deps.clock() - timedelta(days=30) if bucket == "day" else None
+    try:
+        stats: dict[str, Any] = await deps.api.link_stats(
+            session.tokens.access_token, link_id, bucket=bucket, start=start
+        )
+    except ApiError as exc:
+        if exc.status in PASS_THROUGH:
+            raise
+        return None
+    return stats
+
+
 async def _detail(
-    request: Request,
-    deps: AdminDeps,
-    session: Session,
-    link_id: str,
-    *,
-    notice: str | None = None,
-    error: ApiError | None = None,
-    bucket: str = "hour",
-) -> HTMLResponse:
+    request: Request, deps: AdminDeps, session: Session, link_id: str, *,
+    notice: str | None = None, error: ApiError | None = None, bucket: str = "hour",
+) -> HTMLResponse:  # fmt: skip
     link = await deps.api.get_link(session.tokens.access_token, link_id)
+    stats = await _stats(deps, session, link_id, bucket)
     return render(
         request,
         "link_detail.html",
@@ -90,7 +102,8 @@ async def _detail(
         error=api_message(error) if error else None,
         can_edit=_can_edit(session, link),
         can_block=session.is_admin,
-        stats=None,
+        stats=stats,
+        chart=chart_data(stats, bucket) if stats else None,
         bucket=bucket,
     )
 
@@ -138,7 +151,9 @@ async def link_detail(request: Request, link_id: str, deps: Deps, session: Acces
     params = request.query_params
     notice = ("Short link created." if params.get("created") == "1"
               else "Link updated." if params.get("updated") == "1" else None)  # fmt: skip
-    return await _detail(request, deps, session, lid, notice=notice)
+    requested = params.get("bucket")
+    bucket = requested if requested in BUCKETS else "hour"
+    return await _detail(request, deps, session, lid, notice=notice, bucket=bucket)
 
 
 @router.post("/links/{link_id}/edit")
@@ -183,3 +198,40 @@ async def delete_link(request: Request, link_id: str, deps: Deps, session: Mutat
     token = session.tokens.access_token
     return await _act(request, deps, session, lid, lambda: deps.api.delete_link(token, lid),
                       "/links?deleted=1")  # fmt: skip
+
+
+@router.get("/links/{link_id}/stats")
+async def link_stats(
+    request: Request, link_id: str, deps: Deps, session: Access, bucket: str = "hour"
+) -> Response:
+    lid = _uuid_or_none(link_id)
+    if lid is None:
+        return _not_found(request)
+    bucket = bucket if bucket in BUCKETS else "hour"
+    if not is_htmx(request):
+        return RedirectResponse(f"/links/{lid}?bucket={bucket}", status_code=303)
+    stats = await _stats(deps, session, lid, bucket)
+    return render(request, "partials/link_stats.html", link={"id": lid}, stats=stats, bucket=bucket,
+                  chart=chart_data(stats, bucket) if stats else None)  # fmt: skip
+
+
+@router.post("/links/{link_id}/block")
+async def block_link(
+    request: Request, link_id: str, deps: Deps, session: Mutate, reason: Annotated[str, Form()] = ""
+) -> Response:
+    lid = _uuid_or_none(link_id)
+    if lid is None:
+        return _not_found(request)
+    token = session.tokens.access_token
+    return await _act(request, deps, session, lid, lambda: deps.api.block_link(token, lid, reason),
+                      f"/links/{lid}?updated=1")  # fmt: skip
+
+
+@router.post("/links/{link_id}/unblock")
+async def unblock_link(request: Request, link_id: str, deps: Deps, session: Mutate) -> Response:
+    lid = _uuid_or_none(link_id)
+    if lid is None:
+        return _not_found(request)
+    token = session.tokens.access_token
+    return await _act(request, deps, session, lid, lambda: deps.api.unblock_link(token, lid),
+                      f"/links/{lid}?updated=1")  # fmt: skip
