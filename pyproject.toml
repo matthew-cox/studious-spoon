@@ -34,7 +34,7 @@ extend-include = ["scripts/*"]
 src = ["libs/shortener-events/src", "api/src", "tools/keycloak-tools/src"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "S", "SIM", "RUF"]
+select = ["E", "F", "I", "B", "UP", "S", "SIM", "RUF", "EXE"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101", "S105", "S106", "S603", "S607"]

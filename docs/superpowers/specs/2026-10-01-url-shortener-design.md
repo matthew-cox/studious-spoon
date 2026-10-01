@@ -540,4 +540,8 @@ These constraints apply to every task in the implementation plan.
   - `ruff format --check`
   - `mypy --strict` on `src/` of every package
   - **≥ 90% branch coverage on the pure business-logic modules** listed above, and **≥ 80% overall**, enforced with `pytest --cov --cov-fail-under`
+- **Executable Python scripts:**
+  - Every Python file meant to be run directly lives in `scripts/` and starts with `#!/usr/bin/env -S uv run --quiet --script`, followed by a PEP 723 `# /// script` header that declares its dependencies (workspace packages via relative `[tool.uv.sources]` paths). It has the executable bit set, so it runs from any directory with only `uv` installed.
+  - Library modules and container entrypoints never get a shebang; they are run with `python -m` (runtime images don't ship uv).
+  - Enforced by ruff's `EXE` rules (a shebang without the executable bit, or an executable file without a shebang, fails lint). `scripts/*` is included in ruff's file set.
 - **Definition of done for a task:** tests pass, the quality gates pass, there are no new unexplained `# type: ignore` or `noqa` comments, and the spec or README is updated if behavior changed.
