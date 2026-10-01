@@ -1,3 +1,5 @@
+import functools
+
 import pytest
 
 from shortener_admin.api_client import ApiClient
@@ -30,7 +32,12 @@ def test_build_deps_uses_real_components_without_network(settings):
 def test_create_app_from_env(monkeypatch):
     for name, value in ENV.items():
         monkeypatch.setenv(name, value)
-    assert create_app_from_env().title == "Shortener admin"
+    monkeypatch.setattr(  # never install process-global OTel providers from tests
+        "shortener_admin.main.build_deps", functools.partial(build_deps, install_globals=False)
+    )
+    app = create_app_from_env()
+    assert app.title == "Shortener admin"
+    app.state.deps.telemetry_shutdown()
 
 
 def test_create_app_from_env_fails_fast(monkeypatch):

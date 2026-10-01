@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -14,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.trace import Span
 from sqlalchemy.ext.asyncio import create_async_engine
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
@@ -53,6 +55,19 @@ def _to_login(request: Request, next_path: str, expired: bool) -> Response:
     if is_htmx(request):
         return Response(status_code=200, headers={"HX-Redirect": url})
     return RedirectResponse(url, status_code=303)
+
+
+def _redact_query(span: Span, scope: dict[str, Any]) -> None:
+    """The OIDC callback URL carries the authorization code and state; keep them out of spans."""
+    attributes = getattr(span, "attributes", None) or {}
+    if not span.is_recording():
+        return
+    for key in ("http.url", "url.full", "http.target"):
+        value = attributes.get(key)
+        if isinstance(value, str) and "?" in value:
+            span.set_attribute(key, value.split("?", 1)[0])
+    if "url.query" in attributes:
+        span.set_attribute("url.query", "[redacted]")
 
 
 def create_app(deps: AdminDeps) -> FastAPI:
@@ -134,6 +149,7 @@ def create_app(deps: AdminDeps) -> FastAPI:
             tracer_provider=deps.tracer_provider,
             meter_provider=deps.meter_provider,
             excluded_urls="healthz,readyz,static",
+            server_request_hook=_redact_query,
         )
         HTTPXClientInstrumentor.instrument_client(
             deps.api.http_client, tracer_provider=deps.tracer_provider

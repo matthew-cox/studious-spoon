@@ -10,6 +10,8 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"
 INCOMING = {"traceparent": f"00-{TRACE}-00f067aa0ba902b7-01"}
+CODE = "authcode-9f8e7d6c5b4a"
+STATE = "forgedstate-1a2b3c4d5e6f"
 SUMMARY = {"link_count": 0, "clicks_7d": 0, "top_links": [], "data_as_of": None}
 
 
@@ -61,10 +63,23 @@ async def test_spans_and_logs_carry_no_secrets(
     mocks.get(f"{ids['API']}/api/v1/stats/summary").respond(json=SUMMARY)
     caplog.set_level(logging.DEBUG)
     await client.get("/", headers=INCOMING)
-    await client.get("/auth/callback", params={"code": "c", "state": "forged"})
-    secrets = [session.tokens.access_token, session.id, session.csrf_token,
+    await client.get("/auth/callback", params={"code": CODE, "state": STATE}, headers=INCOMING)
+    secrets = [CODE, STATE, session.tokens.access_token, session.id, session.csrf_token,
                settings.oidc_client_secret.get_secret_value()]  # fmt: skip
     attribute_values = [str(v) for s in spans.get_finished_spans() for v in s.attributes.values()]
     for secret in secrets:
         assert not any(secret in value for value in attribute_values), secret
-        assert secret not in caplog.text, secret
+        # httpx logs the *test client's* own browser-side request URL; that is not app output.
+        app_logs = "\n".join(r.getMessage() for r in caplog.records if r.name != "httpx")
+        assert secret not in app_logs, secret
+        assert secret not in "".join(str(r.exc_info) for r in caplog.records), secret
+
+
+async def test_unhandled_error_page_shows_the_request_trace_id(app, client):
+    @app.get("/boom")
+    async def boom() -> None:
+        raise RuntimeError("kaboom")
+
+    response = await client.get("/boom", headers=INCOMING)
+    assert response.status_code == 500
+    assert f"<code>{TRACE}</code>" in response.text
