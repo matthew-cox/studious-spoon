@@ -1,14 +1,17 @@
 import math
+from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 from urllib.parse import urlencode
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from shortener_admin.auth import require_access
+from shortener_admin.api_client import ApiError
+from shortener_admin.auth import require_access, verify_csrf_with_access
 from shortener_admin.deps import AdminDeps, get_deps
 from shortener_admin.sessions import Session
-from shortener_admin.views import is_htmx, render
+from shortener_admin.views import api_message, is_htmx, render
 
 router = APIRouter()
 Deps = Annotated[AdminDeps, Depends(get_deps)]
@@ -40,3 +43,143 @@ async def list_links(
     return render(request, template, result=result, q=query, status=status_filter, page=page_no,
                   pages=pages, page_url=page_url, statuses=STATUSES,
                   deleted=request.query_params.get("deleted") == "1")  # fmt: skip
+
+
+Mutate = Annotated[Session, Depends(verify_csrf_with_access)]
+PASS_THROUGH = {401, 503}  # handled app-wide: session expiry / API down
+
+
+def _uuid_or_none(raw: str) -> str | None:
+    try:
+        return str(UUID(raw))
+    except ValueError:
+        return None
+
+
+def _can_edit(session: Session, link: dict[str, Any]) -> bool:
+    if session.is_admin:
+        return True
+    return (
+        session.can_create
+        and link["owner_username"] == session.username
+        and link["status"] != "blocked"
+    )
+
+
+def _not_found(request: Request) -> HTMLResponse:
+    return render(request, "error.html", status_code=404, title="Link not found", message="")
+
+
+async def _detail(
+    request: Request,
+    deps: AdminDeps,
+    session: Session,
+    link_id: str,
+    *,
+    notice: str | None = None,
+    error: ApiError | None = None,
+    bucket: str = "hour",
+) -> HTMLResponse:
+    link = await deps.api.get_link(session.tokens.access_token, link_id)
+    return render(
+        request,
+        "link_detail.html",
+        status_code=error.status if error else 200,
+        link=link,
+        notice=notice,
+        error=api_message(error) if error else None,
+        can_edit=_can_edit(session, link),
+        can_block=session.is_admin,
+        stats=None,
+        bucket=bucket,
+    )
+
+
+async def _act(
+    request: Request, deps: AdminDeps, session: Session, link_id: str,
+    call: Callable[[], Awaitable[Any]], success_url: str,
+) -> Response:  # fmt: skip
+    try:
+        await call()
+    except ApiError as exc:
+        if exc.status in PASS_THROUGH:
+            raise
+        return await _detail(request, deps, session, link_id, error=exc)
+    return RedirectResponse(success_url, status_code=303)
+
+
+@router.get("/links/new")
+async def new_link(request: Request, session: Access) -> HTMLResponse:
+    if not session.can_create:
+        return render(request, "error.html", status_code=403, title="Not allowed",
+                      message="Your role can't create links.")  # fmt: skip
+    return render(request, "link_new.html", target_url="", error=None)
+
+
+@router.post("/links")
+async def create_link(
+    request: Request, deps: Deps, session: Mutate, target_url: Annotated[str, Form()] = ""
+) -> Response:
+    try:
+        link = await deps.api.create_link(session.tokens.access_token, target_url)
+    except ApiError as exc:
+        if exc.status in PASS_THROUGH:
+            raise
+        return render(request, "link_new.html", status_code=exc.status, target_url=target_url,
+                      error=api_message(exc))  # fmt: skip
+    return RedirectResponse(f"/links/{link['id']}?created=1", status_code=303)
+
+
+@router.get("/links/{link_id}")
+async def link_detail(request: Request, link_id: str, deps: Deps, session: Access) -> HTMLResponse:
+    lid = _uuid_or_none(link_id)
+    if lid is None:
+        return _not_found(request)
+    params = request.query_params
+    notice = ("Short link created." if params.get("created") == "1"
+              else "Link updated." if params.get("updated") == "1" else None)  # fmt: skip
+    return await _detail(request, deps, session, lid, notice=notice)
+
+
+@router.post("/links/{link_id}/edit")
+async def edit_link(
+    request: Request,
+    link_id: str,
+    deps: Deps,
+    session: Mutate,
+    target_url: Annotated[str, Form()] = "",
+) -> Response:
+    lid = _uuid_or_none(link_id)
+    if lid is None:
+        return _not_found(request)
+    token = session.tokens.access_token
+    return await _act(request, deps, session, lid,
+                      lambda: deps.api.update_link(token, lid, target_url=target_url),
+                      f"/links/{lid}?updated=1")  # fmt: skip
+
+
+@router.post("/links/{link_id}/toggle")
+async def toggle_link(
+    request: Request,
+    link_id: str,
+    deps: Deps,
+    session: Mutate,
+    is_active: Annotated[str, Form()] = "",
+) -> Response:
+    lid = _uuid_or_none(link_id)
+    if lid is None or is_active not in ("true", "false"):
+        return _not_found(request)
+    token = session.tokens.access_token
+    return await _act(request, deps, session, lid,
+                      lambda: deps.api.update_link(token, lid, is_active=is_active == "true"),
+                      f"/links/{lid}?updated=1")  # fmt: skip
+
+
+@router.post("/links/{link_id}/delete")
+async def delete_link(request: Request, link_id: str, deps: Deps, session: Mutate) -> Response:
+    lid = _uuid_or_none(link_id)
+    if lid is None:
+        return _not_found(request)
+    token = session.tokens.access_token
+    return await _act(request, deps, session, lid, lambda: deps.api.delete_link(token, lid),
+                      "/links?deleted=1")  # fmt: skip

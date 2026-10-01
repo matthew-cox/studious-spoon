@@ -92,3 +92,9 @@ async def verify_csrf(
         if not tokens_match(session.csrf_token, supplied):
             raise CsrfFailed()
     return session
+
+
+async def verify_csrf_with_access(session: Annotated[Session, Depends(verify_csrf)]) -> Session:
+    if not session.has_access:
+        raise NoAccess()
+    return session

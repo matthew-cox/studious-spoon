@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ link.code }}{% endblock %}
+{% block content %}
+{% if notice %}<p role="status">{{ notice }}</p>{% endif %}
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+<hgroup>
+  <h1>{{ link.code }} <span class="badge {{ link.status }}">{{ link.status }}</span></h1>
+  <p><a href="{{ link.short_url }}">{{ link.short_url }}</a>
+     <button type="button" class="outline secondary" data-copy="{{ link.short_url }}">Copy</button></p>
+</hgroup>
+{% if link.status == "blocked" %}
+<article><strong>Blocked by an administrator.</strong> Reason: {{ link.blocked_reason }}</article>
+{% endif %}
+<dl>
+  <dt>Target</dt><dd class="target">{{ link.target_url }}</dd>
+  <dt>Owner</dt><dd>{{ link.owner_username }}</dd>
+  <dt>Created</dt><dd>{{ link.created_at | as_of }}</dd>
+  <dt>Updated</dt><dd>{{ link.updated_at | as_of }}</dd>
+</dl>
+
+{% if can_edit %}
+<section>
+  <h2>Edit</h2>
+  <form method="post" action="/links/{{ link.id }}/edit">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <label>Target URL <input type="url" name="target_url" value="{{ link.target_url }}" required maxlength="2048"></label>
+    <button type="submit">Save</button>
+  </form>
+  <form method="post" action="/links/{{ link.id }}/toggle" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <input type="hidden" name="is_active" value="{{ 'false' if link.is_active else 'true' }}">
+    <button type="submit" class="secondary">{{ 'Disable' if link.is_active else 'Enable' }}</button>
+  </form>
+  <details>
+    <summary role="button" class="secondary outline">Delete…</summary>
+    <p>This permanently deletes the link and its click history.</p>
+    <form method="post" action="/links/{{ link.id }}/delete">
+      <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+      <button type="submit" class="contrast">Yes, delete {{ link.code }}</button>
+    </form>
+  </details>
+</section>
+{% endif %}
+
+{% if can_block %}
+<section>
+  <h2>Moderation</h2>
+  {% if link.status == "blocked" %}
+  <form method="post" action="/links/{{ link.id }}/unblock">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <button type="submit" class="secondary">Unblock</button>
+  </form>
+  {% else %}
+  <form method="post" action="/links/{{ link.id }}/block">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <label>Reason (visible to the owner) <input type="text" name="reason" required maxlength="1000"></label>
+    <button type="submit" class="contrast">Block link</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if stats %}
+<section>
+  <h2>Clicks</h2>
+  {% include "partials/link_stats.html" %}
+</section>
+{% endif %}
+{% endblock %}
