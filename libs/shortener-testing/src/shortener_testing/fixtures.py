@@ -99,6 +99,7 @@ def reset_database(migrated: PgServer) -> None:
     with migrated.connect("migrator") as conn:
         conn.execute("TRUNCATE public.links CASCADE")  # cascades to analytics rollups
         conn.execute("UPDATE analytics.pipeline_status SET last_committed_at = NULL")
+        conn.execute("TRUNCATE admin.sessions")
 
 
 @pytest.fixture
