@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from shortener_api.auth import StaticJwksProvider, TokenValidator
 from shortener_api.deps import AppDeps
 from shortener_api.settings import ApiSettings
 
@@ -30,5 +31,16 @@ async def dead_engine(settings: ApiSettings) -> AsyncIterator[AsyncEngine]:
 
 
 @pytest.fixture
-def deps(settings, dead_engine, clock) -> AppDeps:
-    return AppDeps(settings=settings, engine=dead_engine, clock=clock, rng=random.Random(7))
+def deps(settings, dead_engine, clock, signing_key) -> AppDeps:
+    validator = TokenValidator(
+        StaticJwksProvider({"test-key": signing_key.public_key()}),
+        settings.oidc_issuer,
+        settings.oidc_audience,
+    )
+    return AppDeps(
+        settings=settings,
+        engine=dead_engine,
+        clock=clock,
+        rng=random.Random(7),
+        token_validator=validator,
+    )

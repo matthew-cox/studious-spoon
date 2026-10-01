@@ -12,6 +12,7 @@ from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from testcontainers.community.postgres import PostgresContainer
 
+from shortener_api.auth import StaticJwksProvider, TokenValidator
 from shortener_api.deps import AppDeps
 from shortener_api.settings import ApiSettings
 
@@ -138,5 +139,16 @@ async def engine(api_settings: ApiSettings) -> AsyncIterator[AsyncEngine]:
 
 
 @pytest.fixture
-def deps(api_settings, engine, clock) -> AppDeps:
-    return AppDeps(settings=api_settings, engine=engine, clock=clock, rng=random.Random(7))
+def deps(api_settings, engine, clock, signing_key) -> AppDeps:
+    validator = TokenValidator(
+        StaticJwksProvider({"test-key": signing_key.public_key()}),
+        api_settings.oidc_issuer,
+        api_settings.oidc_audience,
+    )
+    return AppDeps(
+        settings=api_settings,
+        engine=engine,
+        clock=clock,
+        rng=random.Random(7),
+        token_validator=validator,
+    )
