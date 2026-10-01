@@ -1,0 +1,88 @@
+{
+  "additionalProperties": false,
+  "description": "A single redirect served to a visitor (`link.clicked`, version 1).",
+  "properties": {
+    "code": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Code",
+      "type": "string"
+    },
+    "event_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Event Id",
+      "type": "string"
+    },
+    "link_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Link Id"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "referrer": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Referrer"
+    },
+    "source": {
+      "enum": [
+        "api",
+        "cloudfront"
+      ],
+      "title": "Source",
+      "type": "string"
+    },
+    "type": {
+      "const": "link.clicked",
+      "default": "link.clicked",
+      "title": "Type",
+      "type": "string"
+    },
+    "user_agent": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "User Agent"
+    },
+    "version": {
+      "const": 1,
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "event_id",
+    "occurred_at",
+    "source",
+    "code"
+  ],
+  "title": "ClickEvent",
+  "type": "object"
+}

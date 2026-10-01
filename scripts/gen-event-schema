@@ -1,0 +1,18 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["shortener-events"]
+#
+# [tool.uv.sources]
+# shortener-events = { path = "../libs/shortener-events" }
+# ///
+"""Regenerate libs/shortener-events/schema/link.clicked.v1.json from the ClickEvent model."""
+
+from pathlib import Path
+
+from shortener_events.schema import json_schema_text
+
+OUTPUT = Path(__file__).resolve().parents[1] / "libs/shortener-events/schema/link.clicked.v1.json"
+
+OUTPUT.write_text(json_schema_text())
+print(f"wrote {OUTPUT}")

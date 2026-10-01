@@ -29,6 +29,9 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = ["docs"]
+extend-include = ["scripts/*"]
+src = ["libs/shortener-events/src", "api/src", "tools/keycloak-tools/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S", "SIM", "RUF"]
