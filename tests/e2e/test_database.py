@@ -24,6 +24,8 @@ def test_migrations_applied_and_api_user_can_read_links(e2e_settings):
 
 
 def test_admin_user_cannot_read_links(e2e_settings):
-    with connect(e2e_settings, "admin_user", e2e_settings.admin_db_password) as conn:
-        with pytest.raises(errors.InsufficientPrivilege):
-            conn.execute("SELECT * FROM public.links")
+    with (
+        connect(e2e_settings, "admin_user", e2e_settings.admin_db_password) as conn,
+        pytest.raises(errors.InsufficientPrivilege),
+    ):
+        conn.execute("SELECT * FROM public.links")
