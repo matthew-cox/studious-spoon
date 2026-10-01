@@ -1,0 +1,94 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+"""Generate infra/otel/dashboards/shortener-overview.json (spec §10). `--check` verifies drift."""
+
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+OUTPUT = Path(__file__).resolve().parents[1] / "infra/otel/dashboards/shortener-overview.json"
+PROMETHEUS = {"type": "prometheus", "uid": "prometheus"}
+RATE = "[$__rate_interval]"
+
+
+def timeseries(
+    id_: int, title: str, x: int, y: int, targets: list[tuple[str, str]], unit: str
+) -> dict[str, Any]:
+    return {
+        "id": id_, "type": "timeseries", "title": title, "datasource": PROMETHEUS,
+        "gridPos": {"h": 8, "w": 12, "x": x, "y": y},
+        "fieldConfig": {"defaults": {"unit": unit}, "overrides": []},
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}},
+        "targets": [{"refId": chr(65 + i), "expr": expr, "legendFormat": legend}
+                    for i, (expr, legend) in enumerate(targets)],
+    }  # fmt: skip
+
+
+def stat(id_: int, title: str, x: int, expr: str) -> dict[str, Any]:
+    return {
+        "id": id_, "type": "stat", "title": title, "datasource": PROMETHEUS,
+        "gridPos": {"h": 4, "w": 6, "x": x, "y": 0},
+        "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+        "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+        "targets": [{"refId": "A", "expr": expr, "legendFormat": ""}],
+    }  # fmt: skip
+
+
+def quantile(q: str, bucket: str) -> str:
+    return f"histogram_quantile({q}, sum by (le) (rate({bucket}{RATE})))"
+
+
+def dashboard() -> dict[str, Any]:
+    redirect = "shortener_redirect_duration_seconds_bucket"
+    panels = [
+        stat(1, "Links created (range)", 0, "sum(increase(shortener_links_created_total[$__range]))"),
+        stat(2, "Links blocked (range)", 6, "sum(increase(shortener_links_blocked_total[$__range]))"),
+        stat(3, "Click queue depth", 12, 'max(shortener_queue_depth{queue="click-events"})'),
+        stat(4, "DLQ depth", 18, 'max(shortener_queue_depth{queue="click-events-dlq"})'),
+        timeseries(5, "Redirect rate by result", 0, 4,
+                   [(f"sum by (result) (rate(shortener_redirects_total{RATE}))", "{{result}}")], "reqps"),
+        timeseries(6, "Redirect latency (p50 / p95 / p99)", 12, 4,
+                   [(quantile(q, redirect), f"p{label}") for q, label in (("0.5", "50"), ("0.95", "95"), ("0.99", "99"))],
+                   "s"),
+        timeseries(7, "HTTP 5xx rate by service", 0, 12, [(
+            'sum by (job) (rate(http_server_request_duration_seconds_count'
+            '{job=~"shortener-.*", http_response_status_code=~"5.."}' + RATE + "))", "{{job}}")], "reqps"),
+        timeseries(8, "Click events published / dropped", 12, 12, [
+            (f"sum(rate(shortener_click_events_published_total{RATE}))", "published"),
+            (f"sum by (reason) (rate(shortener_click_events_dropped_total{RATE}))", "dropped {{reason}}"),
+        ], "ops"),
+        timeseries(9, "Processed messages by result", 0, 20,
+                   [(f"sum by (result) (rate(shortener_processor_messages_total{RATE}))", "{{result}}")], "ops"),
+        timeseries(10, "Event lag p95 (occurred → committed)", 12, 20,
+                   [(quantile("0.95", "shortener_processor_event_lag_seconds_bucket"), "p95")], "s"),
+        timeseries(11, "Queue depth", 0, 28, [("max by (queue) (shortener_queue_depth)", "{{queue}}")], "short"),
+        timeseries(12, "Batch duration p95 / publisher buffer", 12, 28, [
+            (quantile("0.95", "shortener_processor_batch_duration_seconds_bucket"), "batch p95 (s)"),
+            ("max(shortener_click_events_buffer_size)", "buffered events"),
+        ], "short"),
+    ]  # fmt: skip
+    return {
+        "uid": "shortener-overview", "title": "Shortener Overview", "tags": ["shortener"],
+        "timezone": "utc", "schemaVersion": 39, "version": 1, "editable": True,
+        "time": {"from": "now-1h", "to": "now"}, "refresh": "10s", "panels": panels,
+    }  # fmt: skip
+
+
+def main() -> int:
+    rendered = json.dumps(dashboard(), indent=2, ensure_ascii=False) + "\n"
+    if "--check" in sys.argv[1:]:
+        if not OUTPUT.exists() or OUTPUT.read_text() != rendered:
+            print(f"{OUTPUT} is stale; run scripts/gen-dashboard", file=sys.stderr)
+            return 1
+        return 0
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT.write_text(rendered)
+    print(f"wrote {OUTPUT}")
+    return 0
+
+
+sys.exit(main())

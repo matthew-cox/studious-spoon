@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: "Shortener"
+    folder: "Shortener"
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /otel-lgtm/shortener-dashboards

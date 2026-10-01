@@ -188,6 +188,8 @@ services:
       COOKIE_SECRET: ${ADMIN_COOKIE_SECRET:?set ADMIN_COOKIE_SECRET in .env (see .env.example)}
       COOKIE_SECURE: "false"   # local http only; true behind TLS
       SERVICE_VERSION: ${GIT_SHA:-dev}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
+      DEPLOYMENT_ENVIRONMENT: local
     ports:
       - "8001:8001"
     depends_on:
@@ -214,6 +216,8 @@ services:
       - "4318:4318"   # OTLP HTTP
     volumes:
       - lgtm-data:/data
+      - ./infra/otel/dashboards:/otel-lgtm/shortener-dashboards:ro
+      - ./infra/otel/grafana/shortener-dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/shortener.yaml:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health && curl -s -o /dev/null http://localhost:4318/v1/traces"]
       interval: 5s
