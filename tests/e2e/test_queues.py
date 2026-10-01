@@ -39,8 +39,8 @@ def test_message_round_trip_with_attributes(sqs):
         MessageBody="{}",
         MessageAttributes={"type": {"DataType": "String", "StringValue": "e2e.ping"}},
     )
-    received = sqs.receive_message(
-        QueueUrl=url, MessageAttributeNames=["All"], WaitTimeSeconds=5
-    )["Messages"]
+    received = sqs.receive_message(QueueUrl=url, MessageAttributeNames=["All"], WaitTimeSeconds=5)[
+        "Messages"
+    ]
     assert received[0]["MessageAttributes"]["type"]["StringValue"] == "e2e.ping"
     sqs.delete_message(QueueUrl=url, ReceiptHandle=received[0]["ReceiptHandle"])
