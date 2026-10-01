@@ -7,6 +7,7 @@ from typing import Any, cast
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import InterfaceError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 PROBLEM_JSON = "application/problem+json"
@@ -71,7 +72,14 @@ async def _validation(_: Request, exc: Exception) -> JSONResponse:
     return problem_response(422, extra={"errors": errors})
 
 
+async def _unavailable(_: Request, exc: Exception) -> JSONResponse:
+    return problem_response(503, detail="database unavailable")
+
+
 def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ProblemError, _problem)
     app.add_exception_handler(StarletteHTTPException, _http)
     app.add_exception_handler(RequestValidationError, _validation)
+    app.add_exception_handler(OperationalError, _unavailable)
+    app.add_exception_handler(InterfaceError, _unavailable)
+    app.add_exception_handler(OSError, _unavailable)

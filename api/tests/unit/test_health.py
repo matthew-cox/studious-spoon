@@ -19,3 +19,9 @@ async def test_unknown_api_route_is_problem_json_404(client):
     assert response.status_code == 404
     assert response.headers["content-type"] == "application/problem+json"
     assert response.json()["title"] == "Not Found"
+
+
+async def test_redirect_is_503_problem_when_database_is_unreachable(client):
+    response = await client.get("/aZ3kQ9x")
+    assert response.status_code == 503
+    assert response.headers["content-type"] == "application/problem+json"
