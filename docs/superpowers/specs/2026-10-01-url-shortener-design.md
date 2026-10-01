@@ -122,11 +122,12 @@ admin/
   tests/
 infra/
   keycloak/realm-export.json, users.yaml
-tools/keycloak-tools/          dev tooling package: idempotent user seeding (keycloak_tools.seed), token fetching
-scripts/                       executable uv-shebang scripts: seed-users, token, gen-event-schema
   elasticmq/elasticmq.conf     queues + DLQ redrive policy
   otel/dashboards/             provisioned Grafana dashboard(s)
-  postgres/init.sql            creates keycloak DB, schemas, DB users/grants
+  postgres/bootstrap.sql       roles + databases only (Terraform's job on RDS); init.sh runs it on first boot.
+                               Schemas, tables, and grants are owned by Alembic migrations.
+tools/keycloak-tools/          dev tooling package: idempotent user seeding (keycloak_tools.seed), token fetching
+scripts/                       executable uv-shebang scripts: seed-users, token, gen-event-schema
 tests/e2e/                     stack-level smoke tests (make e2e)
 docs/
 docker-compose.yml, Makefile, .env.example, README.md

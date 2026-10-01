@@ -21,7 +21,7 @@ from keycloak_tools.users import DesiredUser, load_users
 class SeedSettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
-    keycloak_url: str = "http://localhost:8080"
+    keycloak_url: str
     keycloak_realm: str = "shortener"
     keycloak_admin_user: str
     keycloak_admin_password: str

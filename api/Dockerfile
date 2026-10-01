@@ -5,6 +5,13 @@ FROM python:3.12-slim AS build
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/app/.venv UV_PYTHON_DOWNLOADS=never
 WORKDIR /src
+# Dependencies first (cached until a lockfile or pyproject changes), then the workspace source.
+# Every workspace member's pyproject.toml must be listed here so uv can resolve the workspace.
+COPY pyproject.toml uv.lock .python-version ./
+COPY libs/shortener-events/pyproject.toml libs/shortener-events/
+COPY api/pyproject.toml api/
+COPY tools/keycloak-tools/pyproject.toml tools/keycloak-tools/
+RUN uv sync --frozen --no-dev --no-install-workspace --package shortener-api
 COPY . .
 RUN uv sync --frozen --no-dev --no-editable --package shortener-api
 

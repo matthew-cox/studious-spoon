@@ -13,3 +13,5 @@ CREATE DATABASE shortener OWNER migrator;
 
 REVOKE CONNECT ON DATABASE shortener FROM PUBLIC;
 GRANT CONNECT ON DATABASE shortener TO api_user, processor_user, admin_user;
+
+REVOKE CONNECT ON DATABASE keycloak FROM PUBLIC;

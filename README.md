@@ -69,5 +69,6 @@ make fmt      # auto-format and fix lint
 ## Troubleshooting
 
 - **Realm changes not applied:** Keycloak imports the realm only when it doesn't exist. Run `make down && make up`.
+- **Changed a password or the Keycloak admin in `.env`:** Postgres roles and the Keycloak bootstrap admin are created once per data volume. Run `make down && make up` to recreate them.
 - **`Account is not fully set up` on login:** the user is missing email/first/last name in `users.yaml`.
 - **Testcontainers can't find Docker (colima):** export the two variables above.

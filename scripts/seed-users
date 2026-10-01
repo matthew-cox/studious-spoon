@@ -20,6 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class HostSeedSettings(SeedSettings, env_file=REPO_ROOT / ".env"):
+    keycloak_url: str = "http://localhost:8080"
     users_file: Path = REPO_ROOT / "infra/keycloak/users.yaml"
 
 

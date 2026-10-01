@@ -5,13 +5,13 @@ services:
     image: postgres:16.10-alpine
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD in .env (see .env.example)}
       POSTGRES_DB: postgres
-      MIGRATOR_DB_PASSWORD: ${MIGRATOR_DB_PASSWORD}
-      API_DB_PASSWORD: ${API_DB_PASSWORD}
-      PROCESSOR_DB_PASSWORD: ${PROCESSOR_DB_PASSWORD}
-      ADMIN_DB_PASSWORD: ${ADMIN_DB_PASSWORD}
-      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      MIGRATOR_DB_PASSWORD: ${MIGRATOR_DB_PASSWORD:?set MIGRATOR_DB_PASSWORD in .env (see .env.example)}
+      API_DB_PASSWORD: ${API_DB_PASSWORD:?set API_DB_PASSWORD in .env (see .env.example)}
+      PROCESSOR_DB_PASSWORD: ${PROCESSOR_DB_PASSWORD:?set PROCESSOR_DB_PASSWORD in .env (see .env.example)}
+      ADMIN_DB_PASSWORD: ${ADMIN_DB_PASSWORD:?set ADMIN_DB_PASSWORD in .env (see .env.example)}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD in .env (see .env.example)}
     ports:
       - "5432:5432"
     volumes:
@@ -35,7 +35,7 @@ services:
     image: shortener-api:${GIT_SHA:-dev}
     command: ["alembic", "upgrade", "head"]
     environment:
-      MIGRATOR_DATABASE_URL: postgresql+psycopg://migrator:${MIGRATOR_DB_PASSWORD}@postgres:5432/shortener
+      MIGRATOR_DATABASE_URL: postgresql+psycopg://migrator:${MIGRATOR_DB_PASSWORD:?set MIGRATOR_DB_PASSWORD in .env (see .env.example)}@postgres:5432/shortener
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,13 +57,13 @@ services:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD in .env (see .env.example)}
       KC_HOSTNAME: http://localhost:${KEYCLOAK_HOST_PORT:-8080}
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HEALTH_ENABLED: "true"
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
-      SHORTENER_ADMIN_CLIENT_SECRET: ${SHORTENER_ADMIN_CLIENT_SECRET}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?set KEYCLOAK_ADMIN_USER in .env (see .env.example)}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env (see .env.example)}
+      SHORTENER_ADMIN_CLIENT_SECRET: ${SHORTENER_ADMIN_CLIENT_SECRET:?set SHORTENER_ADMIN_CLIENT_SECRET in .env (see .env.example)}
     ports:
       - "${KEYCLOAK_HOST_PORT:-8080}:8080"
     volumes:
@@ -92,8 +92,8 @@ services:
     environment:
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: shortener
-      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:?set KEYCLOAK_ADMIN_USER in .env (see .env.example)}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env (see .env.example)}
       USERS_FILE: /config/users.yaml
       RESET_PASSWORDS: ${RESET_PASSWORDS:-false}
     volumes:

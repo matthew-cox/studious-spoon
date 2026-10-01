@@ -1,7 +1,10 @@
 from dataclasses import replace
 
+import pytest
+from pydantic import ValidationError
+
 from keycloak_tools.plan import CreateUser, ExistingUser
-from keycloak_tools.seed import run_seed
+from keycloak_tools.seed import SeedSettings, run_seed
 from keycloak_tools.users import DesiredUser
 
 
@@ -86,3 +89,12 @@ def test_reset_passwords_overwrites_existing_password():
     admin.passwords[uid] = "changed-by-user"
     run_seed(admin, [ALICE], reset_passwords=True)
     assert admin.passwords[uid] == "pw"
+
+
+def test_seed_settings_require_keycloak_url(monkeypatch):
+    """In-container a missing URL must fail at startup, not silently target localhost."""
+    monkeypatch.delenv("KEYCLOAK_URL", raising=False)
+    monkeypatch.setenv("KEYCLOAK_ADMIN_USER", "kcadmin")
+    monkeypatch.setenv("KEYCLOAK_ADMIN_PASSWORD", "pw")
+    with pytest.raises(ValidationError, match="keycloak_url"):
+        SeedSettings()

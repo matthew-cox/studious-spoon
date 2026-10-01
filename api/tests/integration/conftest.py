@@ -82,6 +82,14 @@ def migrated(pg_server: PgServer) -> PgServer:
     return pg_server
 
 
+@pytest.fixture(autouse=True)
+def _reset_database(migrated: PgServer) -> None:
+    """Every test starts from the post-migration state (spec §15.2: tests must not share rows)."""
+    with migrated.connect("migrator") as conn:
+        conn.execute("TRUNCATE public.links CASCADE")  # cascades to analytics rollups
+        conn.execute("UPDATE analytics.pipeline_status SET last_committed_at = NULL")
+
+
 @pytest.fixture
 def insert_link(migrated: PgServer) -> Callable[..., UUID]:
     def _insert(**columns: Any) -> UUID:

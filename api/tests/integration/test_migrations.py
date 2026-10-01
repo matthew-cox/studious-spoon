@@ -157,3 +157,17 @@ def test_tables_created_by_later_migrations_inherit_role_grants(migrated):
         with migrated.connect("migrator") as conn:
             conn.execute("DROP TABLE analytics.future_rollup")
             conn.execute("DROP TABLE public.future_links")
+
+
+def test_app_roles_cannot_connect_to_keycloak_database(pg_server):
+    for role in ("api_user", "processor_user", "admin_user"):
+        with pytest.raises(psycopg.OperationalError, match="permission denied"):
+            pg_server.connect(role, db="keycloak")
+
+
+def test_each_test_starts_with_no_links(migrated):
+    """Guards the per-test reset (spec §15.2): earlier tests' rows must not leak in."""
+    with migrated.connect("migrator") as conn:
+        assert conn.execute("SELECT count(*) FROM public.links").fetchone() == (0,)
+        status = conn.execute("SELECT last_committed_at FROM analytics.pipeline_status").fetchone()
+    assert status == (None,)
