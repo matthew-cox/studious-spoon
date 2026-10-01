@@ -82,5 +82,24 @@ services:
       retries: 30
       start_period: 30s
 
+  keycloak-seed:
+    build:
+      context: .
+      dockerfile: tools/keycloak-tools/Dockerfile
+    image: shortener-keycloak-tools:${GIT_SHA:-dev}
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: shortener
+      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      USERS_FILE: /config/users.yaml
+      RESET_PASSWORDS: ${RESET_PASSWORDS:-false}
+    volumes:
+      - ./infra/keycloak/users.yaml:/config/users.yaml:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    restart: "no"
+
 volumes:
   pgdata:

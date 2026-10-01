@@ -1,0 +1,33 @@
+# DEV ONLY — seeded into the local `shortener` realm by `make up` / `make seed-users`.
+# Passwords are set on creation only (set RESET_PASSWORDS=true to force).
+users:
+  - username: alice
+    email: alice@example.test
+    first_name: Alice
+    last_name: Admin
+    password: password
+    roles: [admin]
+  - username: eddie
+    email: eddie@example.test
+    first_name: Eddie
+    last_name: Editor
+    password: password
+    roles: [editor]
+  - username: erin
+    email: erin@example.test
+    first_name: Erin
+    last_name: Editor
+    password: password
+    roles: [editor]
+  - username: victor
+    email: victor@example.test
+    first_name: Victor
+    last_name: Viewer
+    password: password
+    roles: [viewer]
+  - username: nora
+    email: nora@example.test
+    first_name: Nora
+    last_name: Noroles
+    password: password
+    roles: []

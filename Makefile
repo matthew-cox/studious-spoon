@@ -5,7 +5,7 @@ export GIT_SHA
 
 # Pure business-logic modules: >= 90% branch coverage (spec §15.2). Later plans append to this list.
 PURE_MODULES := */shortener_events/*,*/keycloak_tools/users.py,*/keycloak_tools/plan.py
-MYPY_TARGETS := libs/shortener-events/src api/src
+MYPY_TARGETS := libs/shortener-events/src api/src tools/keycloak-tools/src
 
 # `make token USER=eddie`; USER is also a shell env var, so only honor it from the command line.
 TOKEN_USER = $(if $(filter command line,$(origin USER)),$(USER),alice)
@@ -38,6 +38,7 @@ check: lint typecheck test
 up: .env
 	$(COMPOSE) up -d --build --wait postgres elasticmq keycloak
 	$(COMPOSE) run --rm --build migrate
+	$(COMPOSE) run --rm --build keycloak-seed
 
 down:
 	$(COMPOSE) down -v

@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 package = false
 
 [tool.uv.workspace]
-members = ["libs/shortener-events", "api"]
+members = ["libs/shortener-events", "api", "tools/keycloak-tools"]
 
 [dependency-groups]
 dev = [

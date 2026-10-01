@@ -1,0 +1,26 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["keycloak-tools"]
+#
+# [tool.uv.sources]
+# keycloak-tools = { path = "../tools/keycloak-tools" }
+# ///
+"""DEV ONLY: seed infra/keycloak/users.yaml into the local realm from the host.
+
+Reads KEYCLOAK_URL / KEYCLOAK_ADMIN_USER / KEYCLOAK_ADMIN_PASSWORD from the repo's .env
+(environment variables win). `make up` runs the same seeding inside compose.
+"""
+
+from pathlib import Path
+
+from keycloak_tools.seed import SeedSettings, main
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+class HostSeedSettings(SeedSettings, env_file=REPO_ROOT / ".env"):
+    users_file: Path = REPO_ROOT / "infra/keycloak/users.yaml"
+
+
+main(HostSeedSettings())
