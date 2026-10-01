@@ -43,6 +43,7 @@
 | D11 | **Amazon SQS for the click queue; ElasticMQ locally** | CloudFront's future source is *standard* logs delivered to S3 and processed in batches. Real-time logs aren't needed: stats are hourly, and real-time logs cost more and need Kinesis. The S3 path is S3 → event notification → SQS, so SQS covers both producers with one kind of infrastructure, is fully managed, and has no shards to size. ElasticMQ speaks the SQS API, so boto3 code only changes its endpoint URL. |
 | D12 | **Rollups (not raw events) in a separate `analytics` schema in Postgres** | Rollup size grows with links × active hours, not with clicks. Queries need joins with `links` (ownership filtering, top links), which is plain SQL in Postgres. Writes go through a `RollupStore` interface, so DynamoDB could replace it later (§12). |
 | D13 | **At-least-once processing with no per-event dedupe table** | A dedupe table would put one row per event back into Postgres. Duplicate deliveries from SQS are rare, and a slight overcount is acceptable for analytics. Double counting between the API and CloudFront is avoided structurally instead: each source counts only the requests it actually served (§5.4). Exact counts, if ever needed, can be rebuilt from the future S3 archive. |
+| D14 | **No time-series or analytics database (for now)** | TimescaleDB's continuous aggregates and retention policies are attractive, but: (1) it doesn't run on RDS or Aurora (its license prevents cloud providers from offering it as a managed service), so on AWS it would mean Timescale Cloud or self-hosting on EC2; (2) the processor already rolls up at write time, so continuous aggregates would mostly duplicate it; (3) metric-style time-series databases (InfluxDB, Prometheus, Timestream) handle our data shape poorly: many series (one per link) with few points each is their cardinality weakness. Compaction and retention use `pg_cron` (supported on RDS) instead. Revisit if raw clicks need to be queryable with low latency (§12, item 15). |
 
 ## 3. Architecture
 
@@ -455,7 +456,12 @@ Not built in this iteration; the design leaves room for each.
 12. **Block appeals:** an owner-initiated appeal workflow for blocked links.
 13. **Keycloak via Terraform:** manage the realm, clients, and roles with the Keycloak Terraform provider instead of a JSON import.
 14. **Playwright UI tests** and **e2e tests in CI.**
-15. **Rollup retention:** pruning or compacting hourly rollups older than N days into daily rows.
+15. **Rollup compaction and retention, then an analytics store if needed:**
+    - **Step 1 (no new infrastructure):** a `pg_cron` job (supported on RDS) that folds `link_clicks_hourly` rows older than N days into a new `link_clicks_daily` table and prunes referrer rows past a retention window. The stats API reads hourly data for recent ranges and daily data for older ones.
+    - **Step 2 (only if raw clicks must be queryable with low latency**, e.g. slicing by user agent or referrer path over any range): add a dedicated analytics store as a new `RollupStore`/query backend, fed by the same SQS events.
+      - **ClickHouse** is preferred: materialized views roll up automatically, and it stores raw events efficiently. On AWS it would be ClickHouse Cloud.
+      - **TimescaleDB** is second choice: continuous aggregates and retention policies, but it doesn't run on RDS, so it would mean Timescale Cloud or EC2.
+      - See D14 for why neither is used now.
 
 ## 13. Testing Strategy
 
