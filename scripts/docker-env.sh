@@ -1,6 +1,7 @@
 # Source me (don't execute): `. scripts/docker-env.sh`
 # Exports DOCKER_HOST from the active Docker context and, for colima, the testcontainers
-# socket override (Ryuk must mount the VM's /var/run/docker.sock, not the host path).
+# socket override for colima and Docker Desktop (Ryuk must mount the VM's /var/run/docker.sock,
+# not the host path).
 # Anything you've already exported wins. The Makefile sources this for test, check, and e2e.
 
 if [ -z "${DOCKER_HOST:-}" ]; then
@@ -14,7 +15,9 @@ case "${DOCKER_HOST:-}" in
   */.colima/*)
     export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="${TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE:-/var/run/docker.sock}"
     _docker_env_runtime="colima" ;;
-  *docker.raw.sock* | */.docker/run/*) _docker_env_runtime="Docker Desktop" ;;
+  *docker.raw.sock* | */.docker/run/*)
+    export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="${TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE:-/var/run/docker.sock}"
+    _docker_env_runtime="Docker Desktop" ;;
   *orbstack*) _docker_env_runtime="OrbStack" ;;
   "") _docker_env_runtime="default socket (no Docker context found)" ;;
   *) _docker_env_runtime="other" ;;
