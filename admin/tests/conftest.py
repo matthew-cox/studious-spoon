@@ -1,8 +1,9 @@
 """Shared admin test fixtures: RSA key, ID-token minting, discovery, URLs, a fixed clock."""
 
 import json
+import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -111,3 +112,13 @@ def token_body(mint_id_token: Callable[..., str]) -> Callable[..., dict[str, Any
         } | overrides
 
     return _body
+
+
+@pytest.fixture(autouse=True)
+def _restore_logging() -> Iterator[None]:
+    """build_deps() rewires the root logger (JSON handler); undo it after each test."""
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    yield
+    root.handlers[:] = handlers
+    root.setLevel(level)

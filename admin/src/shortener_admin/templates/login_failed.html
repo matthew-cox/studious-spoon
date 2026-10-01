@@ -5,5 +5,6 @@
   <h1>Sign-in failed</h1>
   <p>We couldn't complete your sign-in. This can happen if the sign-in page was open too long.</p>
   <a role="button" href="/auth/login">Try again</a>
+  {% if trace_id %}<p class="muted"><small>Reference: <code>{{ trace_id }}</code></small></p>{% endif %}
 </article>
 {% endblock %}

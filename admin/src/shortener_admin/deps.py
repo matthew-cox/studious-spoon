@@ -5,6 +5,8 @@ from typing import cast
 
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.trace import TracerProvider
 
 from shortener_admin.api_client import ApiClient
 from shortener_admin.oidc import KeycloakOidc
@@ -21,6 +23,9 @@ class AdminDeps:
     clock: Callable[[], datetime]
     templates: Jinja2Templates
     aclose: Callable[[], Awaitable[None]] | None = None  # releases engine / HTTP client
+    tracer_provider: TracerProvider | None = None
+    meter_provider: MeterProvider | None = None
+    telemetry_shutdown: Callable[[], None] | None = None
 
 
 def get_deps(request: Request) -> AdminDeps:

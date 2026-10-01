@@ -19,6 +19,10 @@ class AdminSettings(BaseSettings):
     cookie_secret: SecretStr = Field(min_length=32)
     cookie_secure: bool = False
     http_timeout_seconds: float = Field(default=5.0, gt=0)
+    otel_exporter_otlp_endpoint: str | None = None
+    deployment_environment: str = "local"
+    otel_metric_export_interval_ms: int = Field(default=10_000, ge=1_000)
+    log_level: str = "INFO"
     service_version: str = "dev"
 
     @property

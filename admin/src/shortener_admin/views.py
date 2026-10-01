@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse
 
 from shortener_admin.api_client import ApiError
 from shortener_admin.deps import get_deps
+from shortener_observability import current_trace_id
 
 
 def is_htmx(request: Request) -> bool:
@@ -19,7 +20,11 @@ def render(
     request: Request, template: str, *, status_code: int = 200, **context: Any
 ) -> HTMLResponse:
     deps = get_deps(request)
-    context = {"session": getattr(request.state, "session", None), **context}
+    context = {
+        "session": getattr(request.state, "session", None),
+        "trace_id": current_trace_id(),
+        **context,
+    }
     return deps.templates.TemplateResponse(request, template, context, status_code=status_code)
 
 

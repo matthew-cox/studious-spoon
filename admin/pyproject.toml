@@ -14,7 +14,16 @@ dependencies = [
   "httpx>=0.27",
   "sqlalchemy[asyncio]>=2.0.35",
   "psycopg[binary]>=3.2",
+  "shortener-observability",
+  "opentelemetry-api==1.45.0",
+  "opentelemetry-sdk==1.45.0",
+  "opentelemetry-instrumentation-fastapi==0.66b0",
+  "opentelemetry-instrumentation-sqlalchemy==0.66b0",
+  "opentelemetry-instrumentation-httpx==0.66b0",
 ]
+
+[tool.uv.sources]
+shortener-observability = { workspace = true }
 
 [build-system]
 requires = ["hatchling>=1.25"]

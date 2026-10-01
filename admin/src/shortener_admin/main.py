@@ -12,6 +12,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from sqlalchemy.ext.asyncio import create_async_engine
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
@@ -24,6 +26,7 @@ from shortener_admin.routes import auth, health, links, pages
 from shortener_admin.sessions import PostgresSessionStore
 from shortener_admin.settings import AdminSettings, load_admin_settings
 from shortener_admin.views import is_htmx, render
+from shortener_observability import configure_telemetry, instrument_engine
 
 logger = logging.getLogger(__name__)
 PACKAGE_DIR = Path(__file__).parent
@@ -60,6 +63,8 @@ def create_app(deps: AdminDeps) -> FastAPI:
         finally:
             if deps.aclose is not None:
                 await deps.aclose()
+            if deps.telemetry_shutdown is not None:
+                deps.telemetry_shutdown()
 
     app = FastAPI(
         title="Shortener admin",
@@ -123,6 +128,16 @@ def create_app(deps: AdminDeps) -> FastAPI:
         return render(request, "error.html", status_code=500, title="Something went wrong",
                       message="Please try again.")  # fmt: skip
 
+    if deps.tracer_provider is not None:
+        FastAPIInstrumentor.instrument_app(
+            app,
+            tracer_provider=deps.tracer_provider,
+            meter_provider=deps.meter_provider,
+            excluded_urls="healthz,readyz,static",
+        )
+        HTTPXClientInstrumentor.instrument_client(
+            deps.api.http_client, tracer_provider=deps.tracer_provider
+        )
     return app
 
 
@@ -130,12 +145,24 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def build_deps(settings: AdminSettings) -> AdminDeps:
+def build_deps(settings: AdminSettings, *, install_globals: bool = True) -> AdminDeps:
     """Real implementations. Nothing here touches the network until first use."""
+    telemetry = configure_telemetry(
+        service_name="shortener-admin",
+        service_version=settings.service_version,
+        environment=settings.deployment_environment,
+        otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+        metric_export_interval_ms=settings.otel_metric_export_interval_ms,
+        log_level=settings.log_level,
+        install_globals=install_globals,
+    )
     engine = create_async_engine(
         str(settings.database_url),
         pool_pre_ping=True,
         connect_args={"connect_timeout": 5, "options": "-c statement_timeout=5000"},
+    )
+    uninstrument_engine = instrument_engine(
+        engine.sync_engine, telemetry.tracer_provider, telemetry.meter_provider
     )
     api_http = httpx.AsyncClient(
         base_url=str(settings.api_base_url), timeout=settings.http_timeout_seconds
@@ -144,6 +171,7 @@ def build_deps(settings: AdminSettings) -> AdminDeps:
     async def aclose() -> None:
         await api_http.aclose()
         await engine.dispose()
+        uninstrument_engine()
 
     return AdminDeps(
         settings=settings,
@@ -153,6 +181,9 @@ def build_deps(settings: AdminSettings) -> AdminDeps:
         clock=utc_now,
         templates=make_templates(),
         aclose=aclose,
+        tracer_provider=telemetry.tracer_provider,
+        meter_provider=telemetry.meter_provider,
+        telemetry_shutdown=telemetry.shutdown,
     )
 
 

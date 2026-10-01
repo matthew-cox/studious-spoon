@@ -37,6 +37,10 @@ class ApiClient:
     def __init__(self, http: httpx.AsyncClient) -> None:
         self._http = http
 
+    @property
+    def http_client(self) -> httpx.AsyncClient:
+        return self._http
+
     async def _call(
         self,
         method: str,

@@ -16,11 +16,15 @@ ENV = {
 
 
 def test_build_deps_uses_real_components_without_network(settings):
-    deps = build_deps(settings)
+    deps = build_deps(settings, install_globals=False)
     assert isinstance(deps.sessions, PostgresSessionStore)
     assert isinstance(deps.oidc, KeycloakOidc)
     assert isinstance(deps.api, ApiClient)
     assert deps.clock().tzinfo is not None
+    assert deps.tracer_provider is not None
+    assert deps.tracer_provider.resource.attributes["service.name"] == "shortener-admin"
+    assert deps.telemetry_shutdown is not None
+    deps.telemetry_shutdown()
 
 
 def test_create_app_from_env(monkeypatch):

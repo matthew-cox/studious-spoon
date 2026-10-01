@@ -51,6 +51,7 @@ async def test_failed_callback_renders_400_and_creates_no_session(client, mocks,
     assert response.status_code == 400
     assert "Sign-in failed" in response.text
     assert store.sessions == {}
+    assert "Reference:" not in response.text
 
 
 async def test_callback_fails_when_api_rejects_the_new_token(
