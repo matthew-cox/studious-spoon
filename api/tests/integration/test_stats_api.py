@@ -76,6 +76,7 @@ async def test_stats_visibility(client, token_for, eddies):
     [
         {"from": "2026-10-01T12:00:00Z", "to": "2026-10-01T12:00:00Z"},
         {"from": "2026-08-01T00:00:00Z", "to": "2026-10-01T00:00:00Z", "bucket": "hour"},
+        {"from": "2026-10-01T12:30:00Z", "to": "2026-10-01T12:10:00Z"},
         {"bucket": "week"},
     ],
 )

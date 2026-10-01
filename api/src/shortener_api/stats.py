@@ -33,9 +33,9 @@ def normalize_range(
 ) -> tuple[datetime, datetime]:
     end_utc = _utc(end) if end is not None else _utc(now)
     start_utc = _utc(start) if start is not None else end_utc - DEFAULT_SPAN
-    lo, hi = floor(start_utc, bucket), _ceil(end_utc, bucket)
-    if lo >= hi:
+    if start_utc >= end_utc:  # check the raw instants: rounding could widen a bad range
         raise InvalidRange("'from' must be before 'to'")
+    lo, hi = floor(start_utc, bucket), _ceil(end_utc, bucket)
     if (hi - lo) / STEP[bucket] > MAX_BUCKETS[bucket]:
         raise InvalidRange(f"range too large: at most {MAX_BUCKETS[bucket]} {bucket} buckets")
     return lo, hi

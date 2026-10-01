@@ -38,7 +38,12 @@ def test_naive_inputs_are_treated_as_utc_and_offsets_converted():
 
 @pytest.mark.parametrize(
     ("start", "end"),
-    [(utc(2026, 10, 1, 12), utc(2026, 10, 1, 12)), (utc(2026, 10, 2), utc(2026, 10, 1))],
+    [
+        (utc(2026, 10, 1, 12), utc(2026, 10, 1, 12)),
+        (utc(2026, 10, 2), utc(2026, 10, 1)),
+        (utc(2026, 10, 1, 12, 30), utc(2026, 10, 1, 12, 10)),  # reversed within one hour
+        (utc(2026, 10, 1, 12, 30), utc(2026, 10, 1, 12, 30)),  # equal, off a boundary
+    ],
 )
 def test_empty_or_reversed_range_is_invalid(start, end):
     with pytest.raises(InvalidRange, match="before"):
@@ -58,3 +63,8 @@ def test_fill_series_zero_fills_in_order():
         (utc(2026, 10, 1, 11), 2),
         (utc(2026, 10, 1, 12), 0),
     ]
+
+
+def test_reversed_range_within_one_day_bucket_is_invalid():
+    with pytest.raises(InvalidRange, match="before"):
+        normalize_range(utc(2026, 10, 1, 15), utc(2026, 10, 1, 9), "day", NOW)
