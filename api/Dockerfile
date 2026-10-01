@@ -13,6 +13,7 @@ COPY libs/shortener-testing/pyproject.toml libs/shortener-testing/
 COPY api/pyproject.toml api/
 COPY processor/pyproject.toml processor/
 COPY tools/keycloak-tools/pyproject.toml tools/keycloak-tools/
+COPY admin/pyproject.toml admin/
 RUN uv sync --frozen --no-dev --no-install-workspace --package shortener-api
 COPY . .
 RUN uv sync --frozen --no-dev --no-editable --package shortener-api

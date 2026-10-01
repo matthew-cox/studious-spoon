@@ -4,8 +4,8 @@ GIT_SHA ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 export GIT_SHA
 
 # Pure business-logic modules: >= 90% branch coverage (spec §15.2). Later plans append to this list.
-PURE_MODULES := */shortener_events/*,*/keycloak_tools/users.py,*/keycloak_tools/plan.py,*/shortener_api/policy.py,*/shortener_api/codes.py,*/shortener_api/urls.py,*/shortener_api/stats.py,*/shortener_processor/referrers.py,*/shortener_processor/aggregate.py
-MYPY_TARGETS := libs/shortener-events/src api/src tools/keycloak-tools/src processor/src
+PURE_MODULES := */shortener_events/*,*/keycloak_tools/users.py,*/keycloak_tools/plan.py,*/shortener_api/policy.py,*/shortener_api/codes.py,*/shortener_api/urls.py,*/shortener_api/stats.py,*/shortener_processor/referrers.py,*/shortener_processor/aggregate.py,*/shortener_admin/security.py
+MYPY_TARGETS := libs/shortener-events/src api/src tools/keycloak-tools/src processor/src admin/src
 
 # `make token USER=eddie`; USER is also a shell env var, so only honor it from the command line.
 TOKEN_USER = $(if $(filter command line,$(origin USER)),$(USER),alice)
