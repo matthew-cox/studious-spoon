@@ -11,6 +11,7 @@ COPY pyproject.toml uv.lock .python-version ./
 COPY libs/shortener-events/pyproject.toml libs/shortener-events/
 COPY libs/shortener-testing/pyproject.toml libs/shortener-testing/
 COPY api/pyproject.toml api/
+COPY processor/pyproject.toml processor/
 COPY tools/keycloak-tools/pyproject.toml tools/keycloak-tools/
 RUN uv sync --frozen --no-dev --no-install-workspace --package keycloak-tools
 COPY . .

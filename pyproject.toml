@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 package = false
 
 [tool.uv.workspace]
-members = ["libs/shortener-events", "libs/shortener-testing", "api", "tools/keycloak-tools"]
+members = ["libs/shortener-events", "libs/shortener-testing", "api", "processor", "tools/keycloak-tools"]
 
 [dependency-groups]
 dev = [
@@ -58,7 +58,7 @@ plugins = ["pydantic.mypy"]
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib -m 'not e2e'"
 asyncio_mode = "auto"
-testpaths = ["libs", "api", "tools", "tests"]
+testpaths = ["libs", "api", "processor", "tools", "tests"]
 markers = [
   "integration: needs a Docker daemon (testcontainers)",
   "e2e: needs the full compose stack running (make up)",
@@ -66,7 +66,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["shortener_events", "shortener_api", "keycloak_tools"]
+source = ["shortener_events", "shortener_api", "shortener_processor", "keycloak_tools"]
 
 [tool.coverage.report]
 show_missing = true
