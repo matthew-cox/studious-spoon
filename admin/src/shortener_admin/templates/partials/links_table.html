@@ -1,0 +1,27 @@
+<div id="links-table">
+{% if result['items'] %}
+<table>
+  <thead><tr><th>Short link</th><th>Target</th><th>Owner</th><th>Status</th><th>Created</th></tr></thead>
+  <tbody>
+  {% for link in result['items'] %}
+    <tr>
+      <td><a href="/links/{{ link.id }}">{{ link.code }}</a></td>
+      <td class="target">{{ link.target_url }}</td>
+      <td>{{ link.owner_username }}</td>
+      <td><span class="badge {{ link.status }}">{{ link.status }}</span></td>
+      <td>{{ link.created_at | as_of }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<nav aria-label="Pagination">
+  <ul>
+    {% if page > 1 %}<li><a href="{{ page_url(page - 1) }}" hx-get="{{ page_url(page - 1) }}" hx-target="#links-table" hx-swap="outerHTML" hx-push-url="true">Previous</a></li>{% endif %}
+    <li class="muted">Page {{ page }} of {{ pages }} · {{ result.total }} links</li>
+    {% if page < pages %}<li><a href="{{ page_url(page + 1) }}" hx-get="{{ page_url(page + 1) }}" hx-target="#links-table" hx-swap="outerHTML" hx-push-url="true">Next</a></li>{% endif %}
+  </ul>
+</nav>
+{% else %}
+<p class="muted">No links match.</p>
+{% endif %}
+</div>

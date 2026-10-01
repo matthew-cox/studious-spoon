@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="grid">
+  <article><header>Links</header><p class="stat" id="link-count">{{ summary.link_count }}</p></article>
+  <article><header>Clicks (last 7 days)</header><p class="stat" id="clicks-7d">{{ summary.clicks_7d }}</p></article>
+</div>
+<h2>Top links</h2>
+{% if summary.top_links %}
+<table>
+  <thead><tr><th>Code</th><th>Clicks (7 days)</th></tr></thead>
+  <tbody>
+  {% for link in summary.top_links %}
+    <tr><td><a href="/links/{{ link.id }}">{{ link.code }}</a></td><td>{{ link.clicks_7d }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No clicks in the last 7 days.</p>
+{% endif %}
+<p class="muted"><small>{% if summary.data_as_of %}Data as of {{ summary.data_as_of | as_of }}{% else %}No clicks processed yet{% endif %}</small></p>
+{% endblock %}

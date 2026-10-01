@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Links{% endblock %}
+{% block content %}
+<h1>Links</h1>
+{% if deleted %}<p role="status">Link deleted.</p>{% endif %}
+<form method="get" action="/links" hx-get="/links" hx-target="#links-table" hx-swap="outerHTML" hx-push-url="true"
+      hx-trigger="submit, input changed delay:300ms from:find input[name=q], change from:find select">
+  <div class="grid">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search code or target" aria-label="Search">
+    <select name="status" aria-label="Status">
+      <option value="">Any status</option>
+      {% for value in statuses %}<option value="{{ value }}"{% if value == status %} selected{% endif %}>{{ value }}</option>{% endfor %}
+    </select>
+  </div>
+</form>
+{% include "partials/links_table.html" %}
+{% endblock %}

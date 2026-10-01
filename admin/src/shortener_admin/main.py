@@ -1,6 +1,7 @@
 """App factory and production wiring."""
 
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -13,15 +14,22 @@ from starlette.middleware.sessions import SessionMiddleware
 from shortener_admin.api_client import ApiError
 from shortener_admin.auth import SID_COOKIE, CsrfFailed, LoginRequired, NoAccess
 from shortener_admin.deps import AdminDeps, get_deps
-from shortener_admin.routes import auth, health
+from shortener_admin.routes import auth, health, links, pages
 from shortener_admin.views import is_htmx, render
 
 logger = logging.getLogger(__name__)
 PACKAGE_DIR = Path(__file__).parent
 
 
+def _as_of(value: str) -> str:
+    moment = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+    return moment.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
 def make_templates() -> Jinja2Templates:
-    return Jinja2Templates(directory=PACKAGE_DIR / "templates")
+    templates = Jinja2Templates(directory=PACKAGE_DIR / "templates")
+    templates.env.filters["as_of"] = _as_of
+    return templates
 
 
 def _login_url(next_path: str, expired: bool) -> str:
@@ -51,6 +59,8 @@ def create_app(deps: AdminDeps) -> FastAPI:
     app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(pages.router)
+    app.include_router(links.router)
 
     @app.exception_handler(LoginRequired)
     async def _login_required(request: Request, exc: Exception) -> Response:
