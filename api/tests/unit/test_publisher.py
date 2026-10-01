@@ -2,6 +2,7 @@ import asyncio
 from datetime import UTC, datetime
 
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
 
 from shortener_api.publisher import BATCH_SIZE, BufferedClickPublisher, InMemoryClickPublisher
 from shortener_api.telemetry import ApiTelemetry
@@ -195,3 +196,26 @@ async def test_loop_survives_an_unexpected_error(make_publisher):
         await sender.called.wait()
     await publisher.stop()
     assert [decode(m).event_id for m in sender.calls[0]] == ["e1"]
+
+
+async def test_publisher_carries_the_request_traceparent(make_publisher):
+    sender = FakeSender()
+    publisher = make_publisher(sender)
+    tracer = TracerProvider().get_tracer("t")
+    with tracer.start_as_current_span("redirect") as span:
+        publisher.publish(event(1))
+    publisher.publish(event(2))  # no active span
+    await publisher.flush_once()
+    with_ctx, without_ctx = sender.calls[0]
+    ctx = span.get_span_context()
+    assert with_ctx.attributes["traceparent"] == (
+        f"00-{ctx.trace_id:032x}-{ctx.span_id:016x}-{int(ctx.trace_flags):02x}"
+    )
+    assert "traceparent" not in without_ctx.attributes
+
+
+async def test_in_memory_publisher_records_traceparents():
+    publisher = InMemoryClickPublisher()
+    with TracerProvider().get_tracer("t").start_as_current_span("s"):
+        publisher.publish(event(1))
+    assert publisher.traceparents[0] is not None and publisher.traceparents[0].startswith("00-")

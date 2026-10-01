@@ -1,9 +1,10 @@
+import functools
+
 import pytest
 
 from shortener_api.auth import TokenValidator
 from shortener_api.main import build_deps, create_app, create_app_from_env
 from shortener_api.publisher import BufferedClickPublisher
-from shortener_api.telemetry import configure_meter_provider
 
 ENV = {
     "DATABASE_URL": "postgresql+psycopg://api_user:pw@127.0.0.1:1/shortener",
@@ -40,15 +41,22 @@ async def test_lifespan_starts_and_stops_the_publisher(deps):
 
 
 async def test_build_deps_uses_real_components_without_network(settings):
-    deps = build_deps(settings)
+    deps = build_deps(settings, install_globals=False)
     assert isinstance(deps.publisher, BufferedClickPublisher)
     assert isinstance(deps.token_validator, TokenValidator)
+    assert deps.tracer_provider is not None
+    assert deps.tracer_provider.resource.attributes["service.name"] == "shortener-api"
+    assert deps.telemetry_shutdown is not None
+    deps.telemetry_shutdown()
     await deps.engine.dispose()
 
 
 def test_create_app_from_env(monkeypatch):
     for name, value in ENV.items():
         monkeypatch.setenv(name, value)
+    monkeypatch.setattr(  # never install process-global OTel providers from tests
+        "shortener_api.main.build_deps", functools.partial(build_deps, install_globals=False)
+    )
     app = create_app_from_env()
     assert app.title == "URL Shortener API"
 
@@ -59,18 +67,8 @@ def test_create_app_from_env_fails_fast_without_config(monkeypatch):
         create_app_from_env()
 
 
-@pytest.mark.parametrize("endpoint", [None, "http://127.0.0.1:1"])
-def test_meter_provider_carries_resource_attributes(settings, endpoint):
-    settings = settings.model_copy(update={"otel_exporter_otlp_endpoint": endpoint})
-    provider = configure_meter_provider(settings)
-    attributes = provider._sdk_config.resource.attributes  # private: the SDK has no public accessor
-    assert attributes["service.name"] == "shortener-api"
-    assert attributes["deployment.environment"] == "local"
-    provider.shutdown()
-
-
 async def test_sqs_client_has_bounded_timeouts_and_retries(settings):
-    deps = build_deps(settings)
+    deps = build_deps(settings, install_globals=False)
     config = deps.publisher._sender._client.meta.config  # private: no public accessor
     assert config.connect_timeout == 2
     assert config.read_timeout == 5

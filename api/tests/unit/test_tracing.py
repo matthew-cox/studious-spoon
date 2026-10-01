@@ -1,0 +1,48 @@
+import dataclasses
+
+import pytest
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"
+INCOMING = {"traceparent": f"00-{TRACE}-00f067aa0ba902b7-01"}
+
+
+@pytest.fixture
+def spans() -> InMemorySpanExporter:
+    return InMemorySpanExporter()
+
+
+@pytest.fixture
+def deps(deps, spans):  # overrides the unit deps fixture with tracing enabled
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(spans))
+    return dataclasses.replace(deps, tracer_provider=provider, meter_provider=MeterProvider())
+
+
+async def test_requests_create_server_spans_continuing_the_incoming_trace(client, token_for, spans):
+    response = await client.get("/api/v1/me", headers=token_for("eddie") | INCOMING)
+    assert response.status_code == 200
+    server = [s for s in spans.get_finished_spans() if s.kind.name == "SERVER"]
+    assert server and all(f"{s.context.trace_id:032x}" == TRACE for s in server)
+
+
+async def test_health_endpoints_are_not_traced(client, spans):
+    await client.get("/healthz")
+    assert spans.get_finished_spans() == ()
+
+
+async def test_5xx_problem_includes_trace_id(client, spans):
+    response = await client.get(
+        "/aZ3kQ9x", headers=INCOMING
+    )  # unit deps: database unreachable -> 503
+    assert response.status_code == 503
+    assert response.json()["trace_id"] == TRACE
+
+
+async def test_4xx_problem_has_no_trace_id(client):
+    response = await client.get("/api/v1/me", headers=INCOMING)
+    assert response.status_code == 401
+    assert "trace_id" not in response.json()

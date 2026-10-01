@@ -1,7 +1,8 @@
 """Fixtures shared by unit and integration tests. No project imports except create_app."""
 
+import logging
 import time
-from collections.abc import AsyncIterator, Callable, Iterable, Sequence
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -150,3 +151,13 @@ async def client(deps: Any) -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=create_app(deps))
     async with httpx.AsyncClient(transport=transport, base_url="http://sho.rt") as http:
         yield http
+
+
+@pytest.fixture(autouse=True)
+def _restore_logging() -> Iterator[None]:
+    """build_deps() rewires the root logger (JSON handler); undo it after each test."""
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    yield
+    root.handlers[:] = handlers
+    root.setLevel(level)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
@@ -11,6 +12,9 @@ from shortener_api.codes import RandomSource
 from shortener_api.settings import ApiSettings
 
 if TYPE_CHECKING:
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.trace import TracerProvider
+
     from shortener_api.auth import TokenValidator
     from shortener_api.publisher import ClickPublisher
     from shortener_api.telemetry import ApiTelemetry
@@ -27,6 +31,9 @@ class AppDeps:
     token_validator: TokenValidator
     telemetry: ApiTelemetry
     publisher: ClickPublisher
+    tracer_provider: TracerProvider | None = None
+    meter_provider: MeterProvider | None = None
+    telemetry_shutdown: Callable[[], None] | None = None
 
 
 def get_deps(request: Request) -> AppDeps:

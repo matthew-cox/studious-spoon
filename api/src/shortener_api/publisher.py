@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from shortener_api.telemetry import ApiTelemetry
 from shortener_events import ClickEvent, SqsMessage, encode, to_sqs_attributes
+from shortener_observability import current_traceparent
 
 logger = logging.getLogger(__name__)
 BATCH_SIZE = 10  # SQS SendMessageBatch limit
@@ -23,9 +24,11 @@ class ClickPublisher(Protocol):
 class InMemoryClickPublisher:
     def __init__(self) -> None:
         self.events: list[ClickEvent] = []
+        self.traceparents: list[str | None] = []
 
     def publish(self, event: ClickEvent) -> None:
         self.events.append(event)
+        self.traceparents.append(current_traceparent())
 
     async def start(self) -> None:
         return None
@@ -84,7 +87,7 @@ class BufferedClickPublisher:
     ) -> None:
         self._sender = sender
         self._telemetry = telemetry
-        self._queue: asyncio.Queue[ClickEvent] = asyncio.Queue(maxsize=maxsize)
+        self._queue: asyncio.Queue[tuple[ClickEvent, str | None]] = asyncio.Queue(maxsize=maxsize)
         self._flush_interval = flush_interval
         self._max_attempts = max_attempts
         self._drain_timeout = drain_timeout
@@ -96,12 +99,12 @@ class BufferedClickPublisher:
 
     def publish(self, event: ClickEvent) -> None:
         try:
-            self._queue.put_nowait(event)
+            self._queue.put_nowait((event, current_traceparent()))
         except asyncio.QueueFull:
             self._telemetry.click_events_dropped.add(1, {"reason": "buffer_full"})
 
-    def _take_batch(self) -> list[ClickEvent]:
-        batch: list[ClickEvent] = []
+    def _take_batch(self) -> list[tuple[ClickEvent, str | None]]:
+        batch: list[tuple[ClickEvent, str | None]] = []
         while len(batch) < BATCH_SIZE:
             try:
                 batch.append(self._queue.get_nowait())
@@ -112,12 +115,14 @@ class BufferedClickPublisher:
     def _backoff(self, attempt: int) -> float:
         return 0.1 * 2.0 ** (attempt - 1) * (0.5 + self._jitter())
 
-    async def _send_with_retries(self, batch: list[ClickEvent]) -> None:
+    async def _send_with_retries(self, batch: list[tuple[ClickEvent, str | None]]) -> None:
         pending = batch
         for attempt in range(1, self._max_attempts + 1):
             self._in_flight = len(pending)
             try:
-                failed = await self._sender.send([encode(event) for event in pending])
+                failed = await self._sender.send(
+                    [encode(event, traceparent=parent) for event, parent in pending]
+                )
             except Exception:  # any transport failure; the redirect path must never see it
                 logger.warning("click batch send failed (attempt %d)", attempt, exc_info=True)
                 failed = list(range(len(pending)))

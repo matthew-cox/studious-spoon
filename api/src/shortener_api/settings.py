@@ -33,6 +33,8 @@ class ApiSettings(BaseSettings):
     service_version: str = "dev"
     otel_exporter_otlp_endpoint: str | None = None  # e.g. http://otel-lgtm:4318
     deployment_environment: str = "local"
+    otel_metric_export_interval_ms: int = Field(default=10_000, ge=1_000)
+    log_level: str = "INFO"
 
 
 def load_api_settings() -> ApiSettings:

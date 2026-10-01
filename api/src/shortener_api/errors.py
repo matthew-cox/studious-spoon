@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import InterfaceError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from shortener_observability import current_trace_id
+
 logger = logging.getLogger(__name__)
 PROBLEM_JSON = "application/problem+json"
 
@@ -49,6 +51,8 @@ def problem_response(
     if detail:
         body["detail"] = detail
     body.update(extra or {})
+    if status >= 500 and (trace_id := current_trace_id()) is not None:
+        body["trace_id"] = trace_id
     return JSONResponse(body, status_code=status, headers=headers, media_type=PROBLEM_JSON)
 
 
