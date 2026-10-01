@@ -32,7 +32,7 @@
 |---|---|---|
 | D1 | **Python + FastAPI** for all services | Author's strongest stack; free OpenAPI docs; mature OTEL and OIDC libraries. |
 | D2 | **Admin UI = FastAPI + Jinja2 + HTMX, as a separate service** (not a React SPA, not pages inside the API) | Author has HTMX experience and is weak on React. Running it as its own service keeps the UI/API separation clean: the API is the single source of truth and enforces all authorization, and the admin UI calls it with the user's own token (token relay). Tokens never reach the browser. |
-| D3 | **Postgres 16 + SQLAlchemy 2.x (async) + Alembic** for link data, rollups, and admin sessions | Conventional; maps directly to RDS. |
+| D3 | **Postgres 16 + SQLAlchemy 2.x (async) + Alembic** for link data, rollups, and admin sessions | Conventional; maps directly to RDS. psycopg 3 (sync for Alembic, async for the app). |
 | D4 | **Click analytics are event-driven and kept separate from operational metrics.** Redirects publish `link.clicked` events. OTEL metrics are for operating the service only. | Clicks are business data: they must be durable, queryable per link, and filtered by the caller's permissions. Prometheus is the wrong store for that (a per-link label would cause a cardinality explosion). Publishing events keeps database writes off the redirect path and lets more than one source produce clicks (CloudFront later). |
 | D5 | **`grafana/otel-lgtm` all-in-one** for local observability | One container provides the collector, Prometheus, Loki, Tempo, and Grafana. Lighter footprint for local runs. |
 | D6 | **Owner on/off switch (`is_active`) and admin abuse block (`blocked_*`) stored separately** | See §4.3. A single flag would let the owner re-enable a blocked link, or point it at a "clean" URL to get it unblocked. Storing them independently means unblocking restores whatever `is_active` was before. |
@@ -294,9 +294,9 @@ Base path for JSON endpoints: `/api/v1`. Errors are `application/problem+json` (
 | `GET /{code}` | public | Active and not blocked → `302` to the target, with `Cache-Control: private, no-store`, and the click event is published. Unknown or inactive → `404`. Blocked → `410` HTML page. |
 | `GET /healthz` | public | Liveness check |
 | `GET /readyz` | public | Readiness check: tests the DB connection. SQS is *not* checked, because redirects must keep working when SQS is down. |
-| `GET /api/v1/me` | any role | `{sub, username, roles}` |
+| `GET /api/v1/me` | any authenticated user (no-role users get `roles: []`) | `{sub, username, roles}` |
 | `POST /api/v1/links` | editor, admin | Body `{target_url}` → `201` with the link, including `short_url` |
-| `GET /api/v1/links` | viewer, editor, admin | Query: `q` (matches code or target), `status` (`active\|disabled\|blocked`), `owner` (admin/viewer only), `page`, `page_size` (max 100). Editors only get their own links. |
+| `GET /api/v1/links` | viewer, editor, admin | Query: `q` (matches code or target), `status` (`active\|disabled\|blocked`), `owner` (admin/viewer only; ignored for editors, who always see only their own links), `page`, `page_size` (max 100). Editors only get their own links. |
 | `GET /api/v1/links/{id}` | viewer, editor (own), admin | Editors get `404` for links they don't own |
 | `PATCH /api/v1/links/{id}` | editor (own), admin | Body `{target_url?, is_active?}`. Owner on a blocked link → `409`. |
 | `DELETE /api/v1/links/{id}` | editor (own), admin | `204`. Owner on a blocked link → `409`. Rollups are removed by cascade. |
@@ -307,7 +307,7 @@ Base path for JSON endpoints: `/api/v1`. Errors are `application/problem+json` (
 
 ### 6.1 Permission Policy
 
-Implemented as a pure function `can(principal, action, link) -> bool` in `policy.py`. Routes call it; nothing else makes authorization decisions.
+Implemented as a pure function `can(principal, action, link) -> bool` (implemented as `decide(principal, action, link) -> Decision` with outcomes ALLOW/403/404/409, since the matrix has four outcomes) in `policy.py`. Routes call it; nothing else makes authorization decisions.
 
 | Action | admin | editor (own) | editor (other's) | viewer | no role |
 |---|---|---|---|---|---|
@@ -402,7 +402,7 @@ Jinja2 + HTMX, with Pico.css for styling and Chart.js for charts. All vendored u
 | api | `shortener.links.created` | counter | — |
 | api | `shortener.links.blocked` | counter | — |
 | api | `shortener.click_events.published` | counter | — |
-| api | `shortener.click_events.dropped` | counter | `reason` = `buffer_full\|publish_failed` |
+| api | `shortener.click_events.dropped` | counter | `reason` = `buffer_full\|publish_failed\|shutdown` |
 | api | `shortener.click_events.buffer_size` | gauge | — |
 | processor | `shortener.processor.messages` | counter | `result` = `ok\|invalid\|unknown_link` |
 | processor | `shortener.processor.batch.duration` | histogram (s) | — |

@@ -31,6 +31,8 @@ class ApiSettings(BaseSettings):
     click_buffer_size: int = Field(default=10_000, ge=1)
     click_flush_interval_seconds: float = Field(default=0.25, gt=0)
     service_version: str = "dev"
+    otel_exporter_otlp_endpoint: str | None = None  # e.g. http://otel-lgtm:4318
+    deployment_environment: str = "local"
 
 
 def load_api_settings() -> ApiSettings:

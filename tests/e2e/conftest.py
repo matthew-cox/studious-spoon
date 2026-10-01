@@ -23,6 +23,7 @@ class E2ESettings(BaseSettings):
     sqs_endpoint_url: str = "http://localhost:9324"
     grafana_url: str = "http://localhost:3000"
     otlp_http_url: str = "http://localhost:4318"
+    api_url: str = "http://localhost:8000"
 
 
 @pytest.fixture(scope="session")

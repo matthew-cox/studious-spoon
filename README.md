@@ -35,10 +35,26 @@ make down               # stop everything and delete volumes
 | Postgres | `localhost:5432` | DBs `shortener`, `keycloak`; credentials in `.env` |
 | Keycloak | http://localhost:8080 | Admin console: `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD` from `.env` |
 | ElasticMQ (SQS) | http://localhost:9324 | Stats UI: http://localhost:9325 |
+| API | http://localhost:8000 | OpenAPI at /docs |
 | Grafana (otel-lgtm) | http://localhost:3000 | OTLP: `localhost:4317` (gRPC), `localhost:4318` (HTTP) |
 
 Port 8080 taken on your machine? Set `KEYCLOAK_HOST_PORT` and `KEYCLOAK_URL` in `.env` (e.g. 8180)
 and run `make down && make up`. The token issuer follows that port.
+
+## API
+
+- OpenAPI docs: http://localhost:8000/docs
+- Health: `/healthz` (liveness), `/readyz` (database reachable)
+
+```bash
+TOKEN=$(make -s token USER=eddie)
+curl -s -X POST localhost:8000/api/v1/links -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"target_url": "https://example.com"}'
+curl -si localhost:8000/<code>        # 302 → target; a link.clicked event goes to SQS
+```
+
+Click events wait in the `click-events` queue (http://localhost:9325) until the click processor
+(Plan 3) consumes them.
 
 ## Seeded users (DEV ONLY, password `password`)
 

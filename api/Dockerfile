@@ -24,3 +24,5 @@ COPY api/alembic.ini /app/alembic.ini
 COPY api/alembic /app/alembic
 WORKDIR /app
 USER 10001
+EXPOSE 8000
+CMD ["uvicorn", "--factory", "shortener_api.main:create_app_from_env", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

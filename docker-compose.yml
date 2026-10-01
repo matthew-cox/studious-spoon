@@ -103,6 +103,42 @@ services:
         condition: service_healthy
     restart: "no"
 
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    image: shortener-api:${GIT_SHA:-dev}
+    environment:
+      DATABASE_URL: postgresql+psycopg://api_user:${API_DB_PASSWORD:?set API_DB_PASSWORD in .env (see .env.example)}@postgres:5432/shortener
+      PUBLIC_BASE_URL: http://localhost:8000
+      OIDC_ISSUER: ${KEYCLOAK_URL:?set KEYCLOAK_URL in .env (see .env.example)}/realms/shortener
+      OIDC_INTERNAL_URL: http://keycloak:8080/realms/shortener
+      SQS_ENDPOINT_URL: http://elasticmq:9324
+      AWS_ACCESS_KEY_ID: local       # ElasticMQ ignores credentials; boto3 requires some
+      AWS_SECRET_ACCESS_KEY: local
+      SERVICE_VERSION: ${GIT_SHA:-dev}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
+      DEPLOYMENT_ENVIRONMENT: local
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+      elasticmq:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
   otel-lgtm:
     image: grafana/otel-lgtm:0.11.10
     ports:
