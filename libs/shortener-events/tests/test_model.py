@@ -66,3 +66,15 @@ def test_event_is_immutable(make_event):
     event = make_event()
     with pytest.raises(ValidationError):
         event.code = "other"
+
+
+@pytest.mark.parametrize(
+    "occurred_at",
+    [
+        datetime(9999, 12, 31, 23, 30, tzinfo=timezone(timedelta(hours=-5))),
+        datetime(1, 1, 1, 0, 30, tzinfo=timezone(timedelta(hours=5))),
+    ],
+)
+def test_out_of_range_occurred_at_is_a_validation_error(make_event, occurred_at):
+    with pytest.raises(ValidationError, match="out of range"):
+        make_event(occurred_at=occurred_at)

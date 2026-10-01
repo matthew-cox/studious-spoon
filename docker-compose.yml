@@ -19,7 +19,9 @@ services:
       - ./infra/postgres:/bootstrap:ro
       - ./infra/postgres/init.sh:/docker-entrypoint-initdb.d/10-bootstrap.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d shortener"]
+      # TCP probe: the temporary initdb server listens only on the Unix socket, so it cannot
+      # satisfy this check; querying `shortener` also proves bootstrap.sql has run.
+      test: ["CMD-SHELL", "psql -h 127.0.0.1 -U postgres -d shortener -tAc 'select 1'"]
       interval: 5s
       timeout: 3s
       retries: 20

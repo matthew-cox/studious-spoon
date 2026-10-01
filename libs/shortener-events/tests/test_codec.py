@@ -88,3 +88,13 @@ def test_body_failing_validation_is_invalid():
     )
     with pytest.raises(InvalidEventError):
         decode(SqsMessage(body=body, attributes={"type": "link.clicked", "version": "1"}))
+
+
+@pytest.mark.parametrize("occurred_at", ["9999-12-31T23:30:00-05:00", "0001-01-01T00:30:00+05:00"])
+def test_hostile_occurred_at_is_invalid_not_a_crash(occurred_at):
+    body = (
+        '{"type":"link.clicked","version":1,"event_id":"e","occurred_at":"' + occurred_at + '",'
+        '"source":"api","code":"abc"}'
+    )
+    with pytest.raises(InvalidEventError):
+        decode(SqsMessage(body=body, attributes={"type": "link.clicked", "version": "1"}))

@@ -70,7 +70,7 @@ def test_api_user_privileges(migrated, insert_link):
 def test_api_user_can_read_schema_version(migrated):
     with migrated.connect("api_user") as conn:
         version = conn.execute("SELECT version_num FROM public.alembic_version").fetchone()
-    assert version == ("0001",)
+    assert version == ("0002",)
 
 
 def test_processor_user_privileges(migrated, insert_link):
@@ -135,3 +135,25 @@ def test_downgrade_and_upgrade_round_trip(pg_server, make_alembic_config):
     command.upgrade(cfg, "head")
     with pg_server.connect("migrator", db="shortener_roundtrip") as conn:
         assert tables(conn, "admin") == {"sessions"}
+
+
+def test_tables_created_by_later_migrations_inherit_role_grants(migrated):
+    """Spec §3.4 grants whole schemas, so a table added later must not need hand-written grants."""
+    with migrated.connect("migrator") as conn:
+        conn.execute("CREATE TABLE analytics.future_rollup (n int)")
+        conn.execute("CREATE TABLE public.future_links (n int)")
+    try:
+        with migrated.connect("processor_user") as conn:
+            conn.execute("INSERT INTO analytics.future_rollup VALUES (1)")
+        with migrated.connect("api_user") as conn:
+            conn.execute("SELECT * FROM analytics.future_rollup")
+            with pytest.raises(errors.InsufficientPrivilege):
+                conn.execute("INSERT INTO analytics.future_rollup VALUES (2)")
+            conn.execute("INSERT INTO public.future_links VALUES (1)")
+            conn.execute("DELETE FROM public.future_links")
+        with migrated.connect("admin_user") as conn, pytest.raises(errors.InsufficientPrivilege):
+            conn.execute("SELECT * FROM analytics.future_rollup")
+    finally:
+        with migrated.connect("migrator") as conn:
+            conn.execute("DROP TABLE analytics.future_rollup")
+            conn.execute("DROP TABLE public.future_links")

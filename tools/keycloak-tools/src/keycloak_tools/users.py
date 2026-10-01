@@ -16,6 +16,12 @@ class DesiredUser(BaseModel):
     password: str = Field(min_length=1, repr=False)
     roles: frozenset[str] = frozenset()
 
+    @field_validator("email")
+    @classmethod
+    def _lowercase_email(cls, email: str) -> str:
+        # Keycloak stores emails lowercased; compare like with like so re-seeding is a no-op.
+        return email.lower()
+
     @field_validator("roles")
     @classmethod
     def _known_roles(cls, roles: frozenset[str]) -> frozenset[str]:

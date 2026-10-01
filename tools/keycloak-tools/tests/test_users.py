@@ -65,3 +65,8 @@ def test_repo_users_file_defines_the_demo_users():
         "victor": frozenset({"viewer"}),
         "nora": frozenset(),
     }
+
+
+def test_email_is_lowercased_to_match_keycloak_storage(tmp_path):
+    [alice] = load_users(write(tmp_path, VALID.replace("alice@example.test", "Alice@Example.TEST")))
+    assert alice.email == "alice@example.test"

@@ -35,7 +35,10 @@ class ClickEvent(BaseModel):
     def _require_aware_utc(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("occurred_at must be timezone-aware")
-        return value.astimezone(UTC)
+        try:
+            return value.astimezone(UTC)
+        except OverflowError as exc:  # e.g. 9999-12-31T23:30-05:00 has no UTC equivalent
+            raise ValueError("occurred_at out of range") from exc
 
     @field_validator("referrer")
     @classmethod
