@@ -57,7 +57,7 @@ def build_deps(settings: ApiSettings) -> AppDeps:
         endpoint_url=settings.sqs_endpoint_url,
         # Bounded: the publisher owns retries and a 5 s shutdown drain (botocore defaults: 60 s, 5).
         config=Config(
-            connect_timeout=2, read_timeout=5, retries={"max_attempts": 1, "mode": "standard"}
+            connect_timeout=2, read_timeout=5, retries={"total_max_attempts": 1, "mode": "standard"}
         ),
     )
     publisher = BufferedClickPublisher(

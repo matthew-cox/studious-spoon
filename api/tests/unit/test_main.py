@@ -74,6 +74,6 @@ async def test_sqs_client_has_bounded_timeouts_and_retries(settings):
     config = deps.publisher._sender._client.meta.config  # private: no public accessor
     assert config.connect_timeout == 2
     assert config.read_timeout == 5
-    assert config.retries["total_max_attempts"] == 2  # max_attempts=1 retry
+    assert config.retries["total_max_attempts"] == 1  # no botocore retries: the publisher owns them
     assert config.retries["mode"] == "standard"
     await deps.engine.dispose()
