@@ -36,7 +36,7 @@ check: lint typecheck test
 	cp .env.example .env
 
 up: .env
-	$(COMPOSE) up -d --build --wait postgres
+	$(COMPOSE) up -d --build --wait postgres elasticmq
 	$(COMPOSE) run --rm --build migrate
 
 down:

@@ -39,5 +39,14 @@ services:
         condition: service_healthy
     restart: "no"
 
+  elasticmq:
+    image: softwaremill/elasticmq-native:1.6.14
+    ports:
+      - "9324:9324"
+      - "9325:9325"
+    volumes:
+      - ./infra/elasticmq/elasticmq.conf:/opt/elasticmq.conf:ro
+    # No healthcheck: the native image ships no shell or HTTP client. Consumers retry on connect.
+
 volumes:
   pgdata:
