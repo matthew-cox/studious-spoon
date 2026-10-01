@@ -251,7 +251,7 @@ The event format is the stable interface between producers and the processor. It
 
 ### 5.2 Publisher (API)
 
-- `ClickPublisher` is an interface with an `SqsClickPublisher` implementation (aioboto3, with `SQS_ENDPOINT_URL` pointing at ElasticMQ locally) and an `InMemoryClickPublisher` for tests.
+- `ClickPublisher` is an interface with a `BufferedClickPublisher` implementation (a bounded in-memory queue drained by a background flusher that owns retries) over an `SqsBatchSender` (boto3 called through `asyncio.to_thread`, with bounded botocore connect/read timeouts and `SQS_ENDPOINT_URL` pointing at ElasticMQ locally), and an `InMemoryClickPublisher` for tests.
 - The redirect handler calls `publisher.publish(event)`, which **only puts the event in an in-memory `asyncio.Queue` (default maxsize 10,000) and returns immediately.** The redirect never waits on SQS.
 - A background flusher sends messages with `SendMessageBatch`, up to 10 per call. It flushes when 10 events are waiting or every 250 ms.
 - If the queue is full, the event is **dropped** and `shortener.click_events.dropped` is incremented.
@@ -389,7 +389,7 @@ Jinja2 + HTMX, with Pico.css for styling and Chart.js for charts. All vendored u
 
 ## 10. Observability
 
-- **SDK:** OpenTelemetry Python SDK in all three services. Auto-instrumentation for FastAPI, httpx, SQLAlchemy (asyncpg), botocore/aiobotocore, and logging. Exports over OTLP to `otel-lgtm:4317`.
+- **SDK:** OpenTelemetry Python SDK in all three services. Auto-instrumentation for FastAPI, httpx, SQLAlchemy (psycopg), botocore/aiobotocore, and logging. Exports over OTLP to `otel-lgtm:4317`.
 - **Resource attributes:** `service.name` (`shortener-api` / `shortener-admin` / `shortener-click-processor`), `service.version`, `deployment.environment` (`local`).
 - **Traces:** W3C `traceparent` is passed from admin to api to Postgres, so one UI action produces a single end-to-end trace in Tempo. For clicks, `traceparent` travels in SQS message attributes, and the processor's batch span **links** to each producer span (§5.3).
 - **Logs:** structured JSON to stdout, and also exported over OTLP to Loki. Every record includes `trace_id` and `span_id`.

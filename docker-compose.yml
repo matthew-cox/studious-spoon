@@ -113,7 +113,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://api_user:${API_DB_PASSWORD:?set API_DB_PASSWORD in .env (see .env.example)}@postgres:5432/shortener
       PUBLIC_BASE_URL: http://localhost:8000
-      OIDC_ISSUER: ${KEYCLOAK_URL:?set KEYCLOAK_URL in .env (see .env.example)}/realms/shortener
+      OIDC_ISSUER: http://localhost:${KEYCLOAK_HOST_PORT:-8080}/realms/shortener
       OIDC_INTERNAL_URL: http://keycloak:8080/realms/shortener
       SQS_ENDPOINT_URL: http://elasticmq:9324
       AWS_ACCESS_KEY_ID: local       # ElasticMQ ignores credentials; boto3 requires some
