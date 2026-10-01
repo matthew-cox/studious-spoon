@@ -15,6 +15,7 @@ from testcontainers.community.postgres import PostgresContainer
 from shortener_api.auth import StaticJwksProvider, TokenValidator
 from shortener_api.deps import AppDeps
 from shortener_api.settings import ApiSettings
+from shortener_api.telemetry import ApiTelemetry
 
 # Keep in sync with docker-compose.yml.
 POSTGRES_IMAGE = "postgres:16.10-alpine"
@@ -139,7 +140,7 @@ async def engine(api_settings: ApiSettings) -> AsyncIterator[AsyncEngine]:
 
 
 @pytest.fixture
-def deps(api_settings, engine, clock, signing_key) -> AppDeps:
+def deps(api_settings, engine, clock, signing_key, meter) -> AppDeps:
     validator = TokenValidator(
         StaticJwksProvider({"test-key": signing_key.public_key()}),
         api_settings.oidc_issuer,
@@ -151,4 +152,5 @@ def deps(api_settings, engine, clock, signing_key) -> AppDeps:
         clock=clock,
         rng=random.Random(7),
         token_validator=validator,
+        telemetry=ApiTelemetry(meter),
     )

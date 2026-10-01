@@ -1,5 +1,5 @@
 import json
-import random
+from dataclasses import replace
 from datetime import timedelta
 
 import httpx
@@ -13,7 +13,6 @@ from shortener_api.auth import (
     TokenValidator,
     UnknownKeyError,
 )
-from shortener_api.deps import AppDeps
 from shortener_api.main import create_app
 
 URL = "http://keycloak.test/realms/shortener/protocol/openid-connect/certs"
@@ -75,16 +74,12 @@ async def test_malformed_jwks_on_cold_start_is_unavailable(provider):
         await provider.get_key("test-key")
 
 
-async def test_me_is_503_when_keys_cannot_be_fetched(settings, dead_engine, clock, mint_token):
+async def test_me_is_503_when_keys_cannot_be_fetched(settings, deps, clock, mint_token):
     unreachable = HttpJwksProvider("http://127.0.0.1:1/certs", httpx.AsyncClient(), clock)
-    deps = AppDeps(
-        settings=settings,
-        engine=dead_engine,
-        clock=clock,
-        rng=random.Random(1),
-        token_validator=TokenValidator(unreachable, settings.oidc_issuer, "shortener-api"),
+    broken = replace(
+        deps, token_validator=TokenValidator(unreachable, settings.oidc_issuer, "shortener-api")
     )
-    transport = httpx.ASGITransport(app=create_app(deps))
+    transport = httpx.ASGITransport(app=create_app(broken))
     async with httpx.AsyncClient(transport=transport, base_url="http://sho.rt") as http:
         response = await http.get("/api/v1/me", headers={"Authorization": f"Bearer {mint_token()}"})
     assert response.status_code == 503

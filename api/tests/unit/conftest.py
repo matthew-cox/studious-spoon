@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from shortener_api.auth import StaticJwksProvider, TokenValidator
 from shortener_api.deps import AppDeps
 from shortener_api.settings import ApiSettings
+from shortener_api.telemetry import ApiTelemetry
 
 ISSUER = "http://localhost:8080/realms/shortener"
 
@@ -31,7 +32,7 @@ async def dead_engine(settings: ApiSettings) -> AsyncIterator[AsyncEngine]:
 
 
 @pytest.fixture
-def deps(settings, dead_engine, clock, signing_key) -> AppDeps:
+def deps(settings, dead_engine, clock, signing_key, meter) -> AppDeps:
     validator = TokenValidator(
         StaticJwksProvider({"test-key": signing_key.public_key()}),
         settings.oidc_issuer,
@@ -43,4 +44,5 @@ def deps(settings, dead_engine, clock, signing_key) -> AppDeps:
         clock=clock,
         rng=random.Random(7),
         token_validator=validator,
+        telemetry=ApiTelemetry(meter),
     )

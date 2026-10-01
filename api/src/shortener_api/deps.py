@@ -12,6 +12,7 @@ from shortener_api.settings import ApiSettings
 
 if TYPE_CHECKING:
     from shortener_api.auth import TokenValidator
+    from shortener_api.telemetry import ApiTelemetry
 
 
 @dataclass(kw_only=True)
@@ -23,6 +24,7 @@ class AppDeps:
     clock: Clock
     rng: RandomSource
     token_validator: TokenValidator
+    telemetry: ApiTelemetry
 
 
 def get_deps(request: Request) -> AppDeps:
