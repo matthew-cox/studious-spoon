@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from shortener_api.auth import StaticJwksProvider, TokenValidator
 from shortener_api.deps import AppDeps
+from shortener_api.publisher import InMemoryClickPublisher
 from shortener_api.settings import ApiSettings
 from shortener_api.telemetry import ApiTelemetry
 
@@ -45,4 +46,5 @@ def deps(settings, dead_engine, clock, signing_key, meter) -> AppDeps:
         rng=random.Random(7),
         token_validator=validator,
         telemetry=ApiTelemetry(meter),
+        publisher=InMemoryClickPublisher(),
     )

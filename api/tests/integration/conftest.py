@@ -5,15 +5,19 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+import boto3
 import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from testcontainers.community.postgres import PostgresContainer
+from testcontainers.core.container import DockerContainer
+from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from shortener_api.auth import StaticJwksProvider, TokenValidator
 from shortener_api.deps import AppDeps
+from shortener_api.publisher import InMemoryClickPublisher
 from shortener_api.settings import ApiSettings
 from shortener_api.telemetry import ApiTelemetry
 
@@ -153,4 +157,38 @@ def deps(api_settings, engine, clock, signing_key, meter) -> AppDeps:
         rng=random.Random(7),
         token_validator=validator,
         telemetry=ApiTelemetry(meter),
+        publisher=InMemoryClickPublisher(),
     )
+
+
+# Keep in sync with docker-compose.yml.
+ELASTICMQ_IMAGE = "softwaremill/elasticmq-native:1.6.14"
+
+
+@pytest.fixture(scope="session")
+def elasticmq() -> Iterator[str]:
+    """ElasticMQ with the repo's queue config; yields the endpoint URL."""
+    container = (
+        DockerContainer(ELASTICMQ_IMAGE)
+        .with_exposed_ports(9324)
+        .with_volume_mapping(
+            str(REPO_ROOT / "infra" / "elasticmq" / "elasticmq.conf"), "/opt/elasticmq.conf", "ro"
+        )
+        .waiting_for(LogMessageWaitStrategy("started").with_startup_timeout(30))
+    )
+    with container:
+        yield f"http://{container.get_container_host_ip()}:{container.get_exposed_port(9324)}"
+
+
+@pytest.fixture
+def sqs_client(elasticmq: str) -> Any:
+    client = boto3.client(
+        "sqs",
+        endpoint_url=elasticmq,
+        region_name="us-east-1",
+        aws_access_key_id="local",
+        aws_secret_access_key="local",
+    )
+    url = client.get_queue_url(QueueName="click-events")["QueueUrl"]
+    client.purge_queue(QueueUrl=url)
+    return client
