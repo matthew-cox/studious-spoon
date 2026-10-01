@@ -68,3 +68,21 @@ def test_fill_series_zero_fills_in_order():
 def test_reversed_range_within_one_day_bucket_is_invalid():
     with pytest.raises(InvalidRange, match="before"):
         normalize_range(utc(2026, 10, 1, 15), utc(2026, 10, 1, 9), "day", NOW)
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "bucket"),
+    [
+        (None, datetime(9999, 12, 31, 23, 30, tzinfo=UTC), "hour"),
+        (None, datetime(1, 1, 2, tzinfo=UTC), "hour"),
+        (
+            datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=1))),
+            datetime(1, 1, 5, tzinfo=UTC),
+            "hour",
+        ),
+        (None, datetime(9999, 12, 31, 12, tzinfo=UTC), "day"),
+    ],
+)
+def test_dates_at_the_edge_of_datetime_are_an_invalid_range(start, end, bucket):
+    with pytest.raises(InvalidRange, match="out of range"):
+        normalize_range(start, end, bucket, NOW)

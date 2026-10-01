@@ -31,11 +31,14 @@ def _ceil(value: datetime, bucket: Bucket) -> datetime:
 def normalize_range(
     start: datetime | None, end: datetime | None, bucket: Bucket, now: datetime
 ) -> tuple[datetime, datetime]:
-    end_utc = _utc(end) if end is not None else _utc(now)
-    start_utc = _utc(start) if start is not None else end_utc - DEFAULT_SPAN
-    if start_utc >= end_utc:  # check the raw instants: rounding could widen a bad range
-        raise InvalidRange("'from' must be before 'to'")
-    lo, hi = floor(start_utc, bucket), _ceil(end_utc, bucket)
+    try:
+        end_utc = _utc(end) if end is not None else _utc(now)
+        start_utc = _utc(start) if start is not None else end_utc - DEFAULT_SPAN
+        if start_utc >= end_utc:  # check the raw instants: rounding could widen a bad range
+            raise InvalidRange("'from' must be before 'to'")
+        lo, hi = floor(start_utc, bucket), _ceil(end_utc, bucket)
+    except OverflowError as exc:  # datetime arithmetic or UTC conversion at min/max
+        raise InvalidRange("date out of range") from exc
     if (hi - lo) / STEP[bucket] > MAX_BUCKETS[bucket]:
         raise InvalidRange(f"range too large: at most {MAX_BUCKETS[bucket]} {bucket} buckets")
     return lo, hi

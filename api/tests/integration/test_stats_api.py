@@ -102,3 +102,10 @@ async def test_summary_is_scoped_and_ranked(client, token_for, insert_link, inse
     assert alice["clicks_7d"] == 62
     assert alice["top_links"][0]["code"] == "their01"
     assert (await client.get("/api/v1/stats/summary", headers=token_for("nora"))).status_code == 403
+
+
+@pytest.mark.parametrize("to", ["9999-12-31T23:30:00Z", "0001-01-02T00:00:00Z"])
+async def test_dates_at_the_edge_of_datetime_are_422_not_500(client, token_for, eddies, to):
+    response = await stats(client, eddies, token_for("eddie"), to=to)
+    assert response.status_code == 422
+    assert response.headers["content-type"] == "application/problem+json"

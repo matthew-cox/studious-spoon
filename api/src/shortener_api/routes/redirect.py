@@ -26,38 +26,37 @@ BLOCKED_PAGE = _PAGE.format(
 )
 
 
+async def _respond(code: str, request: Request, deps: AppDeps) -> tuple[Response, str]:
+    link = None
+    if CODE_PATTERN.match(code):
+        link = await LinkRepository(deps.engine).get_by_code(code)
+    if link is None:
+        return HTMLResponse(NOT_FOUND_PAGE, status_code=404, headers=NO_STORE), "not_found"
+    if link.blocked_at is not None:
+        return HTMLResponse(BLOCKED_PAGE, status_code=410, headers=NO_STORE), "blocked"
+    if not link.is_active:
+        return HTMLResponse(NOT_FOUND_PAGE, status_code=404, headers=NO_STORE), "disabled"
+    deps.publisher.publish(
+        ClickEvent(
+            event_id=str(uuid4()),
+            occurred_at=deps.clock.now(),
+            source="api",
+            code=link.code,
+            link_id=link.id,
+            referrer=request.headers.get("referer"),
+            user_agent=request.headers.get("user-agent"),
+        )
+    )
+    return RedirectResponse(link.target_url, status_code=302, headers=NO_STORE), "ok"
+
+
 @router.get("/{code}", include_in_schema=False)
 async def follow(
     code: str, request: Request, deps: Annotated[AppDeps, Depends(get_deps)]
 ) -> Response:
     started = time.perf_counter()
-    result = "not_found"
-    try:
-        link = None
-        if CODE_PATTERN.match(code):
-            link = await LinkRepository(deps.engine).get_by_code(code)
-        if link is None:
-            return HTMLResponse(NOT_FOUND_PAGE, status_code=404, headers=NO_STORE)
-        if link.blocked_at is not None:
-            result = "blocked"
-            return HTMLResponse(BLOCKED_PAGE, status_code=410, headers=NO_STORE)
-        if not link.is_active:
-            result = "disabled"
-            return HTMLResponse(NOT_FOUND_PAGE, status_code=404, headers=NO_STORE)
-        result = "ok"
-        deps.publisher.publish(
-            ClickEvent(
-                event_id=str(uuid4()),
-                occurred_at=deps.clock.now(),
-                source="api",
-                code=link.code,
-                link_id=link.id,
-                referrer=request.headers.get("referer"),
-                user_agent=request.headers.get("user-agent"),
-            )
-        )
-        return RedirectResponse(link.target_url, status_code=302, headers=NO_STORE)
-    finally:
-        attributes = {"result": result}
-        deps.telemetry.redirects.add(1, attributes)
-        deps.telemetry.redirect_duration.record(time.perf_counter() - started, attributes)
+    response, result = await _respond(code, request, deps)  # a raised error records no metric
+    attributes = {"result": result}
+    deps.telemetry.redirects.add(1, attributes)
+    deps.telemetry.redirect_duration.record(time.perf_counter() - started, attributes)
+    return response

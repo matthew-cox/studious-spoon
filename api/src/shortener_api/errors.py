@@ -1,5 +1,6 @@
 """RFC 9457 problem+json responses for every error the API returns (spec §9)."""
 
+import logging
 from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Any, cast
@@ -10,6 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import InterfaceError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+logger = logging.getLogger(__name__)
 PROBLEM_JSON = "application/problem+json"
 
 
@@ -76,6 +78,11 @@ async def _unavailable(_: Request, exc: Exception) -> JSONResponse:
     return problem_response(503, detail="database unavailable")
 
 
+async def _unexpected(request: Request, exc: Exception) -> JSONResponse:
+    logger.error("unhandled error on %s %s", request.method, request.url.path, exc_info=exc)
+    return problem_response(500)
+
+
 def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ProblemError, _problem)
     app.add_exception_handler(StarletteHTTPException, _http)
@@ -83,3 +90,4 @@ def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(OperationalError, _unavailable)
     app.add_exception_handler(InterfaceError, _unavailable)
     app.add_exception_handler(OSError, _unavailable)
+    app.add_exception_handler(Exception, _unexpected)

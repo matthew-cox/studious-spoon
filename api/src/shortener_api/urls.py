@@ -1,6 +1,6 @@
 """Target-URL validation (spec §4.4). Pure: no framework imports."""
 
-from urllib.parse import SplitResult, urlsplit
+from urllib.parse import SplitResult, unquote, urlsplit
 
 MAX_URL_LENGTH = 2048
 _SCHEMES = {"http", "https"}
@@ -23,7 +23,7 @@ def _authority(parts: SplitResult) -> tuple[str, int]:
         port = parts.port
     except ValueError as exc:
         raise InvalidTargetUrl("URL has an invalid port") from exc
-    host = (parts.hostname or "").lower()
+    host = unquote(parts.hostname or "").lower().rstrip(".")
     return host, port or _DEFAULT_PORTS[parts.scheme.lower()]
 
 

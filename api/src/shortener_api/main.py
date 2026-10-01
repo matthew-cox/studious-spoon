@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 import boto3
 import httpx
+from botocore.config import Config
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -51,7 +52,13 @@ def build_deps(settings: ApiSettings) -> AppDeps:
         clock,
     )
     sqs = boto3.client(
-        "sqs", region_name=settings.aws_region, endpoint_url=settings.sqs_endpoint_url
+        "sqs",
+        region_name=settings.aws_region,
+        endpoint_url=settings.sqs_endpoint_url,
+        # Bounded: the publisher owns retries and a 5 s shutdown drain (botocore defaults: 60 s, 5).
+        config=Config(
+            connect_timeout=2, read_timeout=5, retries={"max_attempts": 1, "mode": "standard"}
+        ),
     )
     publisher = BufferedClickPublisher(
         SqsBatchSender(sqs, settings.click_events_queue_name),

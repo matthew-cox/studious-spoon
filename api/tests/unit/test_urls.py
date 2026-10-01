@@ -70,3 +70,17 @@ def test_invalid_port_is_rejected():
 def test_malformed_url_is_rejected_not_raised_as_value_error(url):
     with pytest.raises(InvalidTargetUrl, match="malformed"):
         validate_target_url(url, OWN)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://sho.rt./x",
+        "http://sho.rt%2e/x",
+        "http://SHO.RT%2E:80/x",
+        "http://sho.rt../x",
+    ],
+)
+def test_own_host_in_trailing_dot_or_escaped_form_is_rejected(url):
+    with pytest.raises(InvalidTargetUrl, match="this shortener"):
+        validate_target_url(url, OWN)
