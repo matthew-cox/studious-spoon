@@ -171,6 +171,41 @@ services:
       retries: 20
       start_period: 5s
 
+  admin:
+    build:
+      context: .
+      dockerfile: admin/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    image: shortener-admin:${GIT_SHA:-dev}
+    environment:
+      DATABASE_URL: postgresql+psycopg://admin_user:${ADMIN_DB_PASSWORD:?set ADMIN_DB_PASSWORD in .env (see .env.example)}@postgres:5432/shortener
+      API_BASE_URL: http://api:8000
+      PUBLIC_BASE_URL: http://localhost:8001
+      OIDC_INTERNAL_URL: http://keycloak:8080/realms/shortener
+      OIDC_CLIENT_ID: shortener-admin
+      OIDC_CLIENT_SECRET: ${SHORTENER_ADMIN_CLIENT_SECRET:?set SHORTENER_ADMIN_CLIENT_SECRET in .env (see .env.example)}
+      COOKIE_SECRET: ${ADMIN_COOKIE_SECRET:?set ADMIN_COOKIE_SECRET in .env (see .env.example)}
+      COOKIE_SECURE: "false"   # local http only; true behind TLS
+      SERVICE_VERSION: ${GIT_SHA:-dev}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/readyz', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
   otel-lgtm:
     image: grafana/otel-lgtm:0.11.10
     ports:

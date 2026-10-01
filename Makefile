@@ -39,7 +39,7 @@ up: .env
 	$(COMPOSE) up -d --build --wait postgres elasticmq keycloak otel-lgtm
 	$(COMPOSE) run --rm --build migrate
 	$(COMPOSE) run --rm --build keycloak-seed
-	$(COMPOSE) up -d --build --wait api click-processor
+	$(COMPOSE) up -d --build --wait api click-processor admin
 
 down:
 	$(COMPOSE) down -v

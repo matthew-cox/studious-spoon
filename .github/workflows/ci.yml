@@ -36,6 +36,7 @@ jobs:
           - api/Dockerfile
           - processor/Dockerfile
           - tools/keycloak-tools/Dockerfile
+          - admin/Dockerfile
     steps:
       - uses: actions/checkout@v4
       - run: docker build -f ${{ matrix.dockerfile }} --build-arg GIT_SHA=${{ github.sha }} .

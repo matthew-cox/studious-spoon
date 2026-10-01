@@ -37,6 +37,7 @@ make down               # stop everything and delete volumes
 | ElasticMQ (SQS) | http://localhost:9324 | Stats UI: http://localhost:9325 |
 | API | http://localhost:8000 | OpenAPI at /docs |
 | Click processor | http://localhost:8002/healthz | Consumes click-events → analytics rollups |
+| Admin UI | http://localhost:8001 | Sign in as a seeded user (password `password`) |
 | Grafana (otel-lgtm) | http://localhost:3000 | OTLP: `localhost:4317` (gRPC), `localhost:4318` (HTTP) |
 
 Port 8080 taken on your machine? Set `KEYCLOAK_HOST_PORT` and `KEYCLOAK_URL` in `.env` (e.g. 8180)
@@ -55,6 +56,12 @@ curl -si localhost:8000/<code>        # 302 → target; a link.clicked event goe
 ```
 
 The click-processor rolls clicks into `analytics.*` within a second or two; `GET /api/v1/links/{id}/stats` shows them. Stop it (`docker compose stop click-processor`) and clicks queue up in `click-events` (http://localhost:9325); start it again and the backlog drains.
+
+## Admin UI
+
+- Sign in at http://localhost:8001 as `alice` (admin), `eddie`/`erin` (editor), `victor` (viewer) or `nora` (no access).
+- Every action goes through the API with your own token, so what you can do is exactly what the API allows.
+- Sessions are server-side in `admin.sessions`; the browser only holds an opaque `sid`.
 
 ## Seeded users (DEV ONLY, password `password`)
 

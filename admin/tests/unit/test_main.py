@@ -1,0 +1,36 @@
+import pytest
+
+from shortener_admin.api_client import ApiClient
+from shortener_admin.main import build_deps, create_app_from_env
+from shortener_admin.oidc import KeycloakOidc
+from shortener_admin.sessions import PostgresSessionStore
+
+ENV = {
+    "DATABASE_URL": "postgresql+psycopg://admin_user:pw@127.0.0.1:1/shortener",
+    "API_BASE_URL": "http://api:8000",
+    "PUBLIC_BASE_URL": "http://localhost:8001",
+    "OIDC_INTERNAL_URL": "http://keycloak:8080/realms/shortener",
+    "OIDC_CLIENT_SECRET": "secret",
+    "COOKIE_SECRET": "c" * 32,
+}
+
+
+def test_build_deps_uses_real_components_without_network(settings):
+    deps = build_deps(settings)
+    assert isinstance(deps.sessions, PostgresSessionStore)
+    assert isinstance(deps.oidc, KeycloakOidc)
+    assert isinstance(deps.api, ApiClient)
+    assert deps.clock().tzinfo is not None
+
+
+def test_create_app_from_env(monkeypatch):
+    for name, value in ENV.items():
+        monkeypatch.setenv(name, value)
+    assert create_app_from_env().title == "Shortener admin"
+
+
+def test_create_app_from_env_fails_fast(monkeypatch):
+    for name in ENV:
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(Exception, match="database_url"):
+        create_app_from_env()

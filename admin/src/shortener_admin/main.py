@@ -5,16 +5,21 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
 
-from shortener_admin.api_client import ApiError
+from shortener_admin.api_client import ApiClient, ApiError
 from shortener_admin.auth import SID_COOKIE, CsrfFailed, LoginRequired, NoAccess
 from shortener_admin.deps import AdminDeps, get_deps
+from shortener_admin.oidc import KeycloakOidc
 from shortener_admin.routes import auth, health, links, pages
+from shortener_admin.sessions import PostgresSessionStore
+from shortener_admin.settings import AdminSettings, load_admin_settings
 from shortener_admin.views import is_htmx, render
 
 logger = logging.getLogger(__name__)
@@ -93,3 +98,32 @@ def create_app(deps: AdminDeps) -> FastAPI:
                       message="Please try again.")  # fmt: skip
 
     return app
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def build_deps(settings: AdminSettings) -> AdminDeps:
+    """Real implementations. Nothing here touches the network until first use."""
+    engine = create_async_engine(
+        str(settings.database_url),
+        pool_pre_ping=True,
+        connect_args={"connect_timeout": 5, "options": "-c statement_timeout=5000"},
+    )
+    api_http = httpx.AsyncClient(
+        base_url=str(settings.api_base_url), timeout=settings.http_timeout_seconds
+    )
+    return AdminDeps(
+        settings=settings,
+        sessions=PostgresSessionStore(engine),
+        oidc=KeycloakOidc(settings, clock=utc_now),
+        api=ApiClient(api_http),
+        clock=utc_now,
+        templates=make_templates(),
+    )
+
+
+def create_app_from_env() -> FastAPI:
+    """uvicorn --factory entrypoint."""
+    return create_app(build_deps(load_admin_settings()))

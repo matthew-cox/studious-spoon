@@ -25,6 +25,7 @@ class E2ESettings(BaseSettings):
     otlp_http_url: str = "http://localhost:4318"
     api_url: str = "http://localhost:8000"
     processor_health_url: str = "http://localhost:8002"
+    admin_url: str = "http://localhost:8001"
 
 
 @pytest.fixture(scope="session")

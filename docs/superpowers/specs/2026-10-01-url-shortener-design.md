@@ -108,13 +108,9 @@ processor/
 admin/
   Dockerfile
   src/shortener_admin/
-    main.py, config.py
-    oidc.py            Authlib login/callback/logout/refresh
-    sessions.py        Postgres-backed session store (admin schema)
-    api_client.py      httpx wrapper with token relay
-    csrf.py
-    routes/            dashboard, links, link_detail
-    telemetry.py
+    settings.py, security.py, sessions.py, db.py, oidc.py, api_client.py
+    deps.py, auth.py, views.py, main.py
+    routes/{auth,health,pages,links}.py
   templates/           full pages + partials/ for HTMX fragments
   static/              pico.css, chart.js, htmx.js (vendored)
   tests/
@@ -342,10 +338,10 @@ The browser reaches Keycloak at `http://localhost:8080`, but containers reach it
 - `OIDC_INTERNAL_URL=http://keycloak:8080/realms/shortener`: used for JWKS, token exchange, and refresh.
 
 ### 7.4 Admin UI Login Flow
-1. An unauthenticated request redirects to `/auth/login`. Authlib builds the authorization request (state, nonce, PKCE).
-2. `/auth/callback` exchanges the code for tokens over the internal URL, creates an `admin.sessions` row, and sets cookie `sid` (`HttpOnly`, `SameSite=Lax`, `Secure` when not local, path `/`).
-3. Each request loads the session. If the access token expires within 30 s, it is refreshed. If the refresh fails, the session is deleted and the user is redirected to login with a "session expired" message.
-4. `/auth/logout` deletes the session and redirects to Keycloak's end-session endpoint with `id_token_hint` (RP-initiated logout).
+1. An unauthenticated request redirects to `/auth/login`. Authlib (Starlette client, Keycloak discovery over the internal URL) builds the authorization request (state, nonce, PKCE S256). That handshake data, plus the post-login path, lives in a signed, 10-minute `login_state` cookie scoped to `/auth` (Starlette `SessionMiddleware`). It never holds tokens.
+2. `/auth/callback` exchanges the code for tokens over the internal URL, creates an `admin.sessions` row, and sets cookie `sid` (`HttpOnly`, `SameSite=Lax`, `Secure` when not local, path `/`). The user's roles come from the API's `GET /api/v1/me`, called with the new access token, not from decoding the token.
+3. Each request loads the session. If the access token expires within 30 s, it is refreshed. If the refresh fails, the session is deleted and the user is redirected to login with a "session expired" message. Roles are re-read from `/me` on every refresh.
+4. `POST /auth/logout` (CSRF-checked) deletes the session and redirects to Keycloak's end-session endpoint with `id_token_hint` (RP-initiated logout).
 
 ### 7.5 Seeded Users
 `infra/keycloak/users.yaml` + `keycloak_tools.seed` (idempotent; it creates or updates users and reconciles role assignments to match the file). It runs automatically through the `keycloak-seed` compose job, and can be re-run with `make seed-users`. Default users, all with password `password` (dev only):
@@ -472,6 +468,9 @@ Not built in this iteration; the design leaves room for each.
     - A `pg_cron` job prunes rows older than the dedupe window. The window must be longer than the worst case before SQS redelivers a message (visibility timeout × `maxReceiveCount` plus backoff, about 3 min). Use **1 hour**, so the table holds about one hour of events, not history.
     - Together with item 16, this removes the remaining consumer-side duplicates.
     - Duplicates between the API and CloudFront remain handled by the counting rules (§5.4), because CloudFront delivery can take longer than any reasonable window.
+18. **httpx → httpx2 migration:** Authlib 1.8 already prefers `httpx2`, and the repo silences its deprecation warning. Migrate every package at once when respx (or a replacement) supports `httpx2`, and review `httpx2`'s behaviour changes (for example, it trusts the OS certificate store via `truststore`).
+19. **Encrypt session tokens at rest in `admin.sessions`:** use envelope encryption with a KMS data key. Today they rely on database encryption at rest.
+20. **Show `trace_id` on admin error pages:** this comes with tracing in Plan 5.
 
 ## 13. Testing Strategy
 
