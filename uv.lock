@@ -13,6 +13,7 @@ members = [
     "shortener-admin",
     "shortener-api",
     "shortener-events",
+    "shortener-observability",
     "shortener-processor",
     "shortener-testing",
 ]
@@ -1796,6 +1797,23 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", specifier = ">=2.8" }]
+
+[[package]]
+name = "shortener-observability"
+version = "0.1.0"
+source = { editable = "libs/shortener-observability" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "opentelemetry-api", specifier = "==1.45.0" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = "==1.45.0" },
+    { name = "opentelemetry-sdk", specifier = "==1.45.0" },
+]
 
 [[package]]
 name = "shortener-processor"

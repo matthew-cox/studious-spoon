@@ -10,6 +10,7 @@ WORKDIR /src
 COPY pyproject.toml uv.lock .python-version ./
 COPY libs/shortener-events/pyproject.toml libs/shortener-events/
 COPY libs/shortener-testing/pyproject.toml libs/shortener-testing/
+COPY libs/shortener-observability/pyproject.toml libs/shortener-observability/
 COPY api/pyproject.toml api/
 COPY processor/pyproject.toml processor/
 COPY admin/pyproject.toml admin/

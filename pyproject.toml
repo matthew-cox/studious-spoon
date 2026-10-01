@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 package = false
 
 [tool.uv.workspace]
-members = ["libs/shortener-events", "libs/shortener-testing", "api", "processor", "tools/keycloak-tools", "admin"]
+members = ["libs/shortener-events", "libs/shortener-testing", "libs/shortener-observability", "api", "processor", "tools/keycloak-tools", "admin"]
 
 [dependency-groups]
 dev = [
@@ -39,6 +39,7 @@ extend-include = ["scripts/*"]
 src = [
   "libs/shortener-events/src",
   "libs/shortener-testing/src",
+  "libs/shortener-observability/src",
   "api/src",
   "processor/src",
   "tools/keycloak-tools/src",
@@ -76,7 +77,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["shortener_events", "shortener_api", "shortener_processor", "keycloak_tools", "shortener_admin"]
+source = ["shortener_events", "shortener_observability", "shortener_api", "shortener_processor", "keycloak_tools", "shortener_admin"]
 
 [tool.coverage.report]
 show_missing = true

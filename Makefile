@@ -5,7 +5,7 @@ export GIT_SHA
 
 # Pure business-logic modules: >= 90% branch coverage (spec §15.2). Later plans append to this list.
 PURE_MODULES := */shortener_events/*,*/keycloak_tools/users.py,*/keycloak_tools/plan.py,*/shortener_api/policy.py,*/shortener_api/codes.py,*/shortener_api/urls.py,*/shortener_api/stats.py,*/shortener_processor/referrers.py,*/shortener_processor/aggregate.py,*/shortener_admin/security.py
-MYPY_TARGETS := libs/shortener-events/src api/src tools/keycloak-tools/src processor/src admin/src
+MYPY_TARGETS := libs/shortener-events/src api/src tools/keycloak-tools/src processor/src admin/src libs/shortener-observability/src
 
 # Detects the Docker runtime for testcontainers (colima needs a socket override).
 DOCKER_ENV := . scripts/docker-env.sh &&
