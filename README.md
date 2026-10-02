@@ -62,6 +62,16 @@ The click-processor rolls clicks into `analytics.*` within a second or two; `GET
 - Every action goes through the API with your own token, so what you can do is exactly what the API allows.
 - Sessions are server-side in `admin.sessions`; the browser only holds an opaque `sid`.
 
+## Observability
+
+- **Grafana** at http://localhost:3000 → **Dashboards → Shortener → Shortener Overview**: redirects, latency, 5xx by service, and the click pipeline (published, dropped, processed, lag, queue and DLQ depth).
+- **Traces** (Explore → Tempo):
+  - one admin action is one trace across admin → API → Postgres
+  - a click's processor batch span **links** to the redirect that produced it
+  - error pages show a **Reference** (trace id); paste it into Tempo's trace search
+- **Logs:** every service writes JSON lines with `trace_id`/`span_id` to stdout (`docker compose logs api`) and to Loki (Explore → Loki, e.g. `{service_name="shortener-api"} | trace_id="…"`).
+- **Dashboard source:** `scripts/gen-dashboard` (dashboard-as-code). Run it after editing, and `make check` fails if the JSON is stale.
+
 ## Seeded users (DEV ONLY, password `password`)
 
 | User | Role |
