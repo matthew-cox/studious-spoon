@@ -16,7 +16,7 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import MetricReader, PeriodicExportingMetricReader
 from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import Tracer
 
@@ -95,6 +95,7 @@ def configure_telemetry(
     metric_export_interval_ms: int = 10_000,
     log_level: str = "INFO",
     install_globals: bool = True,
+    max_span_links: int | None = None,
 ) -> Telemetry:
     resource = Resource.create(
         {
@@ -105,7 +106,9 @@ def configure_telemetry(
     )
     base = otlp_endpoint.rstrip("/") if otlp_endpoint else None
 
-    tracer_provider = TracerProvider(resource=resource)
+    # The processor links one batch span to every message's producer; None keeps the SDK limit.
+    limits = SpanLimits(max_links=max_span_links) if max_span_links else SpanLimits()
+    tracer_provider = TracerProvider(resource=resource, span_limits=limits)
     readers: list[MetricReader] = []
     logger_provider: LoggerProvider | None = None
     extra_handlers: list[logging.Handler] = []

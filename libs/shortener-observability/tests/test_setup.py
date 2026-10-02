@@ -94,3 +94,32 @@ def test_debug_logging_against_dead_endpoint_does_not_reingest_exporter_logs():
     telemetry.meter_provider.force_flush()
     telemetry.shutdown()
     assert seen == ["app"], seen
+
+
+def _links_kept(telemetry, count: int) -> int:
+    from opentelemetry.trace import Link, SpanContext, TraceFlags
+
+    links = [
+        Link(SpanContext(trace_id=i + 1, span_id=i + 1, is_remote=True, trace_flags=TraceFlags(1)))
+        for i in range(count)
+    ]
+    with telemetry.tracer("t").start_as_current_span("batch", links=links) as span:
+        return len(span.links)
+
+
+def test_max_span_links_raises_the_link_limit():
+    telemetry = configure_telemetry(
+        service_name="shortener-click-processor", service_version="v", environment="local",
+        otlp_endpoint=None, install_globals=False, max_span_links=500,
+    )  # fmt: skip
+    assert _links_kept(telemetry, 500) == 500
+    telemetry.shutdown()
+
+
+def test_default_link_limit_is_the_sdk_default():
+    telemetry = configure_telemetry(
+        service_name="shortener-api", service_version="v", environment="local",
+        otlp_endpoint=None, install_globals=False,
+    )  # fmt: skip
+    assert _links_kept(telemetry, 500) == 128
+    telemetry.shutdown()

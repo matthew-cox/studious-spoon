@@ -49,6 +49,7 @@ def build_runtime(settings: ProcessorSettings, *, install_globals: bool = True) 
         metric_export_interval_ms=settings.otel_metric_export_interval_ms,
         log_level=settings.log_level,
         install_globals=install_globals,
+        max_span_links=settings.batch_max_messages,
     )
     processor_telemetry = ProcessorTelemetry(telemetry.meter("shortener_processor"))
     engine = create_async_engine(

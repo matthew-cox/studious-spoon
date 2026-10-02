@@ -346,3 +346,21 @@ async def test_serve_still_shuts_telemetry_down_when_engine_dispose_fails(settin
     with pytest.raises(RuntimeError, match="dispose failed"):
         await serving.finish()
     assert calls == ["uninstrument", "telemetry"]
+
+
+async def test_batch_spans_can_link_every_message_in_a_full_batch(settings):
+    from opentelemetry.trace import Link, SpanContext, TraceFlags
+
+    built = build_runtime(
+        settings.model_copy(update={"batch_max_messages": 400}), install_globals=False
+    )
+    links = [
+        Link(SpanContext(trace_id=i + 1, span_id=i + 1, is_remote=True, trace_flags=TraceFlags(1)))
+        for i in range(400)
+    ]
+    assert built.tracer_provider is not None
+    with built.tracer_provider.get_tracer("t").start_as_current_span("b", links=links) as span:
+        assert len(span.links) == 400
+    assert built.telemetry_shutdown is not None
+    built.telemetry_shutdown()
+    await built.engine.dispose()
