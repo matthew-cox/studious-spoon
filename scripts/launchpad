@@ -1,0 +1,183 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+"""Generate .launchpad/index.html with links to every local UI, then open it.
+
+Config is read on every run (.env.example defaults < .env < process environment), so the
+links follow port changes. Each card shows whether its service answered a quick probe.
+DEV ONLY: lists the seeded dev users; never writes passwords or secrets from .env.
+
+  scripts/launchpad            write the page and open it
+  scripts/launchpad --all      also open every UI in its own tab
+  scripts/launchpad --no-open  only write the page
+  BROWSER=Safari scripts/launchpad
+"""
+
+import argparse
+import html
+import os
+import shutil
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PROBE_TIMEOUT_SECONDS = 1.0
+
+
+@dataclass(frozen=True)
+class Ui:
+    title: str
+    url: str
+    probe: str
+    purpose: str
+    sign_in: str
+
+
+def read_env_file(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip("'\"")
+    return values
+
+
+def load_config(env_file: Path) -> dict[str, str]:
+    return {**read_env_file(REPO_ROOT / ".env.example"), **read_env_file(env_file), **os.environ}
+
+
+def uis(config: dict[str, str]) -> list[Ui]:
+    keycloak = f"http://localhost:{config.get('KEYCLOAK_HOST_PORT') or '8080'}"
+    keycloak_admin = config.get("KEYCLOAK_ADMIN_USER") or "admin"
+    return [
+        Ui("Admin UI", "http://localhost:8001", "http://localhost:8001/healthz",
+           "Manage links, moderation and stats (HTMX).",
+           "alice (admin), eddie / erin (editor), victor (viewer), nora (no access); "
+           "password: password"),
+        Ui("API docs", "http://localhost:8000/docs", "http://localhost:8000/healthz",
+           "OpenAPI / Swagger for the shortener API.",
+           "Authorize with a token from: make token USER=eddie"),
+        Ui("Grafana", "http://localhost:3000/d/shortener-overview", "http://localhost:3000/api/health",
+           "Shortener Overview dashboard; Explore for Tempo traces and Loki logs.",
+           "No login locally (anonymous)"),
+        Ui("Keycloak console", f"{keycloak}/admin/master/console/", f"{keycloak}/realms/shortener",
+           "Realm shortener: users, roles, clients.",
+           f"{keycloak_admin}; password: KEYCLOAK_ADMIN_PASSWORD in .env"),
+        Ui("ElasticMQ stats", "http://localhost:9325", "http://localhost:9325",
+           "Queue depths for click-events and the DLQ.", "No login"),
+    ]  # fmt: skip
+
+
+def is_running(url: str) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=PROBE_TIMEOUT_SECONDS) as response:  # noqa: S310 (fixed local URLs)
+            return int(response.status) < 500
+    except urllib.error.HTTPError as error:
+        return error.code < 500
+    except (OSError, ValueError):
+        return False
+
+
+def render(entries: list[tuple[Ui, bool]], checked_at: datetime) -> str:
+    esc = html.escape
+    cards = []
+    for ui, running in entries:
+        badge = (
+            '<span class="up">● running</span>'
+            if running
+            else '<span class="down">○ not running</span>'
+        )
+        cards.append(
+            f'<article data-ui="{esc(ui.title)}">\n'
+            f'  <h2><a href="{esc(ui.url)}" target="_blank" rel="noopener">'
+            f"{esc(ui.title)} ↗</a> {badge}</h2>\n"
+            f"  <p>{esc(ui.purpose)}</p>\n"
+            f"  <p><small>Sign in: {esc(ui.sign_in)}</small></p>\n"
+            f"  <p><code>{esc(ui.url)}</code></p>\n"
+            "</article>"
+        )  # fmt: skip
+    banner = ""
+    if not all(running for _, running in entries):
+        banner = (
+            '<p class="banner">Some services aren\'t running. Start the stack with '
+            "<code>make up</code> (or <code>make dev</code>), "
+            "then run <code>make ui</code> again.</p>"
+        )
+    checked = esc(checked_at.strftime("%Y-%m-%d %H:%M:%S"))
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shortener launchpad</title>
+<style>
+  :root {{ color-scheme: light dark; font-family: system-ui, sans-serif; }}
+  body {{ max-width: 52rem; margin: 2rem auto; padding: 0 1rem; }}
+  article {{ border: 1px solid #8884; border-radius: .5rem; padding: .25rem 1rem; margin: 1rem 0; }}
+  h2 {{ font-size: 1.15rem; }}
+  .up {{ color: #1a7f37; font-size: .85rem; }}
+  .down {{ color: #cf222e; font-size: .85rem; }}
+  .banner {{ border-left: 4px solid #cf222e; padding: .5rem 1rem; background: #cf222e14; }}
+</style>
+</head>
+<body>
+<h1>Shortener launchpad</h1>
+<p><small>Generated by <code>make ui</code>. Status checked at {checked};
+run it again to refresh. DEV ONLY.</small></p>
+{banner}
+{chr(10).join(cards)}
+</body>
+</html>
+"""
+
+
+def open_in_browser(targets: list[str]) -> None:
+    browser = os.environ.get("BROWSER")
+    if sys.platform == "darwin":
+        subprocess.run(["open", *(["-a", browser] if browser else []), *targets], check=False)  # noqa: S603, S607
+    elif shutil.which("xdg-open"):
+        for target in targets:
+            subprocess.run(["xdg-open", target], check=False)  # noqa: S603, S607
+    else:
+        print("No opener found; open these manually:", *targets, sep="\n  ")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--all", action="store_true", help="also open every UI in its own tab")
+    parser.add_argument("--no-open", action="store_true", help="only write the page")
+    parser.add_argument("--env-file", type=Path, default=REPO_ROOT / ".env")
+    parser.add_argument("--output", type=Path, default=REPO_ROOT / ".launchpad/index.html")
+    args = parser.parse_args()
+
+    entries = uis(load_config(args.env_file))
+    with ThreadPoolExecutor(max_workers=len(entries)) as pool:
+        statuses = list(pool.map(lambda ui: is_running(ui.probe), entries))
+    page = render(list(zip(entries, statuses, strict=True)), datetime.now())
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(page, encoding="utf-8")
+    print(f"wrote {args.output}")
+    down = [ui.title for ui, running in zip(entries, statuses, strict=True) if not running]
+    if down:
+        print(f"not running: {', '.join(down)}. Start the stack with `make up`.")
+    if not args.no_open:
+        open_in_browser([args.output.as_uri(), *([ui.url for ui in entries] if args.all else [])])
+    return 0
+
+
+sys.exit(main())

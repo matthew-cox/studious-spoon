@@ -44,6 +44,8 @@ make sync               # install the workspace
 make up                 # start backing services, run migrations, seed Keycloak users
 make e2e                # verify the running stack
 make token USER=eddie   # print an access token for a seeded user
+make ui                 # open a launchpad with links + status for every local UI (ARGS=--all: open them all)
+make dev                # make up, then make ui
 make down               # stop everything and delete volumes
 ```
 

@@ -13,7 +13,7 @@ DOCKER_ENV := . scripts/docker-env.sh &&
 # `make token USER=eddie`; USER is also a shell env var, so only honor it from the command line.
 TOKEN_USER = $(if $(filter command line,$(origin USER)),$(USER),alice)
 
-.PHONY: sync lint fmt typecheck test check up down logs migrate seed-users token e2e
+.PHONY: sync lint fmt typecheck test check up down logs migrate seed-users token e2e ui dev
 
 # uv sync creates/updates .venv automatically; touch it to update mtime.
 .venv: pyproject.toml uv.lock
@@ -48,6 +48,14 @@ up: .env
 	$(COMPOSE) run --rm --build migrate
 	$(COMPOSE) run --rm --build keycloak-seed
 	$(COMPOSE) up -d --build --wait api click-processor admin
+
+# Launchpad page with links + live status for every local UI (`make ui ARGS=--all` opens them all).
+ui:
+	scripts/launchpad $(ARGS)
+
+# Cold start: bring the stack up, then open the launchpad.
+dev: up
+	$(MAKE) ui
 
 down:
 	$(COMPOSE) down -v
