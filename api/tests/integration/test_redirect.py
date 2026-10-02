@@ -88,3 +88,33 @@ async def test_redirect_still_works_when_buffer_is_full(
     response = await client.get("/full001")
     assert response.status_code == 302
     assert metric_value("shortener.click_events.dropped", {"reason": "buffer_full"}) == 1
+
+
+async def test_head_on_an_active_link_redirects_without_counting_a_click(
+    client, deps, insert_link, metric_value
+):
+    insert_link(code="head001", target_url="https://example.com/preview")
+    response = await client.head("/head001")
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://example.com/preview"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.content == b""
+    assert deps.publisher.events == []  # link previews and checkers are not clicks
+    assert metric_value("shortener.redirects") == 0
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "status"),
+    [({"is_active": False}, 404), ({"blocked_reason": "spam", "blocked_by": "sub-alice"}, 410)],
+)
+async def test_head_mirrors_get_status_for_unavailable_links(
+    client, deps, insert_link, clock, kwargs, status
+):
+    if "blocked_by" in kwargs:
+        kwargs["blocked_at"] = clock.now()
+    insert_link(code="head002", **kwargs)
+    response = await client.head("/head002")
+    assert response.status_code == status
+    assert response.content == b""
+    assert (await client.head("/nope123")).status_code == 404
+    assert deps.publisher.events == []

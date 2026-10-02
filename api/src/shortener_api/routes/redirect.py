@@ -26,7 +26,9 @@ BLOCKED_PAGE = _PAGE.format(
 )
 
 
-async def _respond(code: str, request: Request, deps: AppDeps) -> tuple[Response, str]:
+async def _respond(
+    code: str, request: Request, deps: AppDeps, *, count_click: bool = True
+) -> tuple[Response, str]:
     link = None
     if CODE_PATTERN.match(code):
         link = await LinkRepository(deps.engine).get_by_code(code)
@@ -36,6 +38,8 @@ async def _respond(code: str, request: Request, deps: AppDeps) -> tuple[Response
         return HTMLResponse(BLOCKED_PAGE, status_code=410, headers=NO_STORE), "blocked"
     if not link.is_active:
         return HTMLResponse(NOT_FOUND_PAGE, status_code=404, headers=NO_STORE), "disabled"
+    if not count_click:
+        return RedirectResponse(link.target_url, status_code=302, headers=NO_STORE), "ok"
     deps.publisher.publish(
         ClickEvent(
             event_id=str(uuid4()),
@@ -60,3 +64,13 @@ async def follow(
     deps.telemetry.redirects.add(1, attributes)
     deps.telemetry.redirect_duration.record(time.perf_counter() - started, attributes)
     return response
+
+
+@router.head("/{code}", include_in_schema=False)
+async def peek(
+    code: str, request: Request, deps: Annotated[AppDeps, Depends(get_deps)]
+) -> Response:
+    """Same status and headers as GET, no body. Link previews and checkers aren't clicks:
+    no click event and no redirect metrics (the HTTP server metrics still see the request)."""
+    response, _ = await _respond(code, request, deps, count_click=False)
+    return Response(status_code=response.status_code, headers=dict(response.headers))
