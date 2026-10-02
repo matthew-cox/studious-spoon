@@ -17,7 +17,7 @@ KNOWN_METRICS = {
     "shortener_click_events_published_total", "shortener_click_events_dropped_total",
     "shortener_click_events_buffer_size", "shortener_processor_messages_total",
     "shortener_processor_batch_duration_seconds_bucket", "shortener_processor_event_lag_seconds_bucket",
-    "shortener_queue_depth", "http_server_request_duration_seconds_count",
+    "shortener_queue_depth", "http_server_duration_milliseconds_count",
 }  # fmt: skip
 REQUIRED_TITLES = {
     "Redirect rate by result", "Redirect latency (p50 / p95 / p99)", "HTTP 5xx rate by service",

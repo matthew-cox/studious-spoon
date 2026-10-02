@@ -55,8 +55,8 @@ def dashboard() -> dict[str, Any]:
                    [(quantile(q, redirect), f"p{label}") for q, label in (("0.5", "50"), ("0.95", "95"), ("0.99", "99"))],
                    "s"),
         timeseries(7, "HTTP 5xx rate by service", 0, 12, [(
-            'sum by (job) (rate(http_server_request_duration_seconds_count'
-            '{job=~"shortener-.*", http_response_status_code=~"5.."}' + RATE + "))", "{{job}}")], "reqps"),
+            'sum by (job) (rate(http_server_duration_milliseconds_count'
+            '{job=~"shortener-.*", http_status_code=~"5.."}' + RATE + "))", "{{job}}")], "reqps"),
         timeseries(8, "Click events published / dropped", 12, 12, [
             (f"sum(rate(shortener_click_events_published_total{RATE}))", "published"),
             (f"sum by (reason) (rate(shortener_click_events_dropped_total{RATE}))", "dropped {{reason}}"),
