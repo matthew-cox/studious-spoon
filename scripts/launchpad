@@ -32,13 +32,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PROBE_TIMEOUT_SECONDS = 1.0
 
 
+class Code(str):
+    """A value the user types or copies (user name, command, setting); rendered as <code>."""
+
+
 @dataclass(frozen=True)
 class Ui:
     title: str
     url: str
     probe: str
     purpose: str
-    sign_in: str
+    sign_in: tuple[str, ...]  # plain text and Code parts, joined as-is
 
 
 def read_env_file(path: Path) -> dict[str, str]:
@@ -64,19 +68,21 @@ def uis(config: dict[str, str]) -> list[Ui]:
     return [
         Ui("Admin UI", "http://localhost:8001", "http://localhost:8001/healthz",
            "Manage links, moderation and stats (HTMX).",
-           "alice (admin), eddie / erin (editor), victor (viewer), nora (no access); "
-           "password: password"),
+           (Code("alice"), " (admin), ", Code("eddie"), " / ", Code("erin"), " (editor), ",
+            Code("victor"), " (viewer), ", Code("nora"), " (no access). Password: ",
+            Code("password"))),
         Ui("API docs", "http://localhost:8000/docs", "http://localhost:8000/healthz",
            "OpenAPI / Swagger for the shortener API.",
-           "Authorize with a token from: make token USER=eddie"),
+           ("Click Authorize and paste a token from ", Code("make token USER=eddie"))),
         Ui("Grafana", "http://localhost:3000/d/shortener-overview", "http://localhost:3000/api/health",
            "Shortener Overview dashboard; Explore for Tempo traces and Loki logs.",
-           "No login locally (anonymous)"),
+           ("no login locally (anonymous)",)),
         Ui("Keycloak console", f"{keycloak}/admin/master/console/", f"{keycloak}/realms/shortener",
            "Realm shortener: users, roles, clients.",
-           f"{keycloak_admin}; password: KEYCLOAK_ADMIN_PASSWORD in .env"),
+           (Code(keycloak_admin), ". Password: ", Code("KEYCLOAK_ADMIN_PASSWORD"), " in ",
+            Code(".env"))),
         Ui("ElasticMQ stats", "http://localhost:9325", "http://localhost:9325",
-           "Queue depths for click-events and the DLQ.", "No login"),
+           "Queue depths for click-events and the DLQ.", ("no login",)),
     ]  # fmt: skip
 
 
@@ -88,6 +94,13 @@ def is_running(url: str) -> bool:
         return error.code < 500
     except (OSError, ValueError):
         return False
+
+
+def render_parts(parts: tuple[str, ...]) -> str:
+    esc = html.escape
+    return "".join(
+        f"<code>{esc(part)}</code>" if isinstance(part, Code) else esc(part) for part in parts
+    )
 
 
 def render(entries: list[tuple[Ui, bool]], checked_at: datetime) -> str:
@@ -104,8 +117,8 @@ def render(entries: list[tuple[Ui, bool]], checked_at: datetime) -> str:
             f'  <h2><a href="{esc(ui.url)}" target="_blank" rel="noopener">'
             f"{esc(ui.title)} ↗</a> {badge}</h2>\n"
             f"  <p>{esc(ui.purpose)}</p>\n"
-            f"  <p><small>Sign in: {esc(ui.sign_in)}</small></p>\n"
-            f"  <p><code>{esc(ui.url)}</code></p>\n"
+            f'  <p class="sign-in"><strong>Sign in:</strong> {render_parts(ui.sign_in)}</p>\n'
+            f'  <p class="url">{esc(ui.url)}</p>\n'
             "</article>"
         )  # fmt: skip
     banner = ""
@@ -127,6 +140,11 @@ def render(entries: list[tuple[Ui, bool]], checked_at: datetime) -> str:
   body {{ max-width: 52rem; margin: 2rem auto; padding: 0 1rem; }}
   article {{ border: 1px solid #8884; border-radius: .5rem; padding: .25rem 1rem; margin: 1rem 0; }}
   h2 {{ font-size: 1.15rem; }}
+  code {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em;
+          background: #8882; border: 1px solid #8884; border-radius: .25rem;
+          padding: .05rem .35rem; }}
+  .sign-in {{ line-height: 1.8; }}
+  .url {{ color: GrayText; font-size: .85rem; }}
   .up {{ color: #1a7f37; font-size: .85rem; }}
   .down {{ color: #cf222e; font-size: .85rem; }}
   .banner {{ border-left: 4px solid #cf222e; padding: .5rem 1rem; background: #cf222e14; }}

@@ -123,4 +123,17 @@ def test_values_are_html_escaped(tmp_path):
         tmp_path, [f"KEYCLOAK_HOST_PORT={free_port()}", "KEYCLOAK_ADMIN_USER=<b>x</b>"]
     )
     assert "<b>x</b>" not in html
-    assert "&lt;b&gt;x&lt;/b&gt;" in html
+    assert "<code>&lt;b&gt;x&lt;/b&gt;</code>" in card(html, "Keycloak console")
+
+
+def test_sign_in_label_is_bold_and_actionable_values_are_code(tmp_path):
+    html = run_launchpad(tmp_path, [f"KEYCLOAK_HOST_PORT={free_port()}", "KEYCLOAK_ADMIN_USER=kc"])
+    admin = card(html, "Admin UI")
+    assert "<strong>Sign in:</strong>" in admin
+    for value in ("alice", "eddie", "erin", "victor", "nora", "password"):
+        assert f"<code>{value}</code>" in admin, value
+    assert "<code>make token USER=eddie</code>" in card(html, "API docs")
+    keycloak = card(html, "Keycloak console")
+    assert "<code>kc</code>" in keycloak
+    assert "<code>KEYCLOAK_ADMIN_PASSWORD</code>" in keycloak
+    assert "<code>.env</code>" in keycloak
