@@ -79,19 +79,18 @@ def test_otlp_handler_rejects_exporter_transport_and_suppressed_records():
 
 
 def test_debug_logging_against_dead_endpoint_does_not_reingest_exporter_logs():
-    import time
-
     telemetry = configure_telemetry(
         service_name="shortener-api", service_version="v", environment="local",
         otlp_endpoint="http://127.0.0.1:9", metric_export_interval_ms=100, log_level="DEBUG",
         install_globals=False,
     )  # fmt: skip
     seen: list[str] = []
-    otlp = _otlp_handler()
-    original = otlp.emit
-    otlp.emit = lambda r: (seen.append(r.name), original(r))[1]  # type: ignore[method-assign]
+    # Record what passes the handler's filters instead of exporting it, so a regression fails
+    # with the leaked logger names rather than looping forever.
+    _otlp_handler().emit = lambda r: seen.append(r.name)  # type: ignore[method-assign]
     telemetry.meter("m").create_counter("c").add(1)
     logging.getLogger("app").debug("one")
-    time.sleep(1.0)  # several export cycles, each of which fails and logs at DEBUG
+    # Run an export cycle now (no sleeping): it fails against the dead endpoint and logs at DEBUG.
+    telemetry.meter_provider.force_flush()
     telemetry.shutdown()
     assert seen == ["app"], seen
