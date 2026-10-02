@@ -2,10 +2,11 @@
 
 import logging
 import warnings
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from opentelemetry import metrics, trace
-from opentelemetry.context import _SUPPRESS_INSTRUMENTATION_KEY, get_value
+from opentelemetry.context import _SUPPRESS_INSTRUMENTATION_KEY, Context, get_value
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -18,7 +19,15 @@ from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.trace import Tracer
+from opentelemetry.sdk.trace.sampling import (
+    ALWAYS_ON,
+    Decision,
+    ParentBased,
+    Sampler,
+    SamplingResult,
+)
+from opentelemetry.trace import Link, SpanKind, Tracer, TraceState
+from opentelemetry.util.types import Attributes
 
 from shortener_observability.logs import configure_logging
 
@@ -86,6 +95,44 @@ class Telemetry:
             self.logger_provider.shutdown()
 
 
+class SkipSqsPollingRoots(Sampler):
+    """ParentBased(always-on), except SQS polling calls never start a trace of their own.
+
+    Empty long-polls and queue-depth checks would otherwise each become a root trace and bury
+    the real ones in Tempo. Inside an existing trace they are still recorded.
+    """
+
+    POLLING = frozenset({"ReceiveMessage", "GetQueueAttributes", "GetQueueUrl"})
+
+    def __init__(self) -> None:
+        self._delegate = ParentBased(ALWAYS_ON)
+
+    def should_sample(
+        self,
+        parent_context: Context | None,
+        trace_id: int,
+        name: str,
+        kind: SpanKind | None = None,
+        attributes: Attributes = None,
+        links: Sequence[Link] | None = None,
+        trace_state: TraceState | None = None,
+    ) -> SamplingResult:
+        parent = trace.get_current_span(parent_context).get_span_context()
+        if (
+            not parent.is_valid
+            and attributes
+            and attributes.get("rpc.service") == "SQS"
+            and attributes.get("rpc.method") in self.POLLING
+        ):
+            return SamplingResult(Decision.DROP)
+        return self._delegate.should_sample(
+            parent_context, trace_id, name, kind, attributes, links, trace_state
+        )
+
+    def get_description(self) -> str:
+        return "SkipSqsPollingRoots(ParentBased(ALWAYS_ON))"
+
+
 def configure_telemetry(
     *,
     service_name: str,
@@ -108,7 +155,9 @@ def configure_telemetry(
 
     # The processor links one batch span to every message's producer; None keeps the SDK limit.
     limits = SpanLimits(max_links=max_span_links) if max_span_links else SpanLimits()
-    tracer_provider = TracerProvider(resource=resource, span_limits=limits)
+    tracer_provider = TracerProvider(
+        resource=resource, span_limits=limits, sampler=SkipSqsPollingRoots()
+    )
     readers: list[MetricReader] = []
     logger_provider: LoggerProvider | None = None
     extra_handlers: list[logging.Handler] = []

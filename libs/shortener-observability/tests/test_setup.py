@@ -123,3 +123,32 @@ def test_default_link_limit_is_the_sdk_default():
     )  # fmt: skip
     assert _links_kept(telemetry, 500) == 128
     telemetry.shutdown()
+
+
+def _sqs_attrs(method: str) -> dict[str, str]:
+    return {"rpc.system": "aws-api", "rpc.service": "SQS", "rpc.method": method}
+
+
+def test_sqs_polling_calls_do_not_start_their_own_traces():
+    telemetry = configure_telemetry(
+        service_name="shortener-click-processor", service_version="v", environment="local",
+        otlp_endpoint=None, install_globals=False,
+    )  # fmt: skip
+    tracer = telemetry.tracer("botocore")
+    for method in ("ReceiveMessage", "GetQueueAttributes", "GetQueueUrl"):
+        with tracer.start_as_current_span(f"SQS.{method}", attributes=_sqs_attrs(method)) as span:
+            assert not span.is_recording(), method
+    with tracer.start_as_current_span(
+        "SQS.SendMessageBatch", attributes=_sqs_attrs("SendMessageBatch")
+    ) as span:
+        assert span.is_recording()
+    with (
+        tracer.start_as_current_span("process click batch"),
+        tracer.start_as_current_span(
+            "SQS.ReceiveMessage", attributes=_sqs_attrs("ReceiveMessage")
+        ) as span,
+    ):
+        assert span.is_recording()  # inside a real trace it stays
+    with tracer.start_as_current_span("GET /{code}") as span:
+        assert span.is_recording()
+    telemetry.shutdown()
