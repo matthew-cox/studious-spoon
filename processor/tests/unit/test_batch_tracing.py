@@ -65,9 +65,9 @@ def make(spans, meter):
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(spans))
 
-    def _make(store=None):
+    def _make(store=None, **kwargs):
         return BatchProcessor(Queue(), Resolver(), store or Store(), ProcessorTelemetry(meter),
-                              tracer=provider.get_tracer("t"))  # fmt: skip
+                              tracer=provider.get_tracer("t"), **kwargs)  # fmt: skip
 
     return _make
 
@@ -96,3 +96,9 @@ async def test_commit_failure_is_recorded_on_the_span(make, spans):
     [span] = spans.get_finished_spans()
     assert span.status.status_code is StatusCode.ERROR
     assert any(e.name == "exception" for e in span.events)
+
+
+async def test_span_destination_name_is_the_configured_queue(make, spans):
+    await make(destination_name="clicks-prod").process([message(1, tp(PRODUCER_A))])
+    [span] = spans.get_finished_spans()
+    assert span.attributes["messaging.destination.name"] == "clicks-prod"

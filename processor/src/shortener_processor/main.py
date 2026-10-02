@@ -78,6 +78,7 @@ def build_runtime(settings: ProcessorSettings, *, install_globals: bool = True) 
         PostgresRollupStore(engine),
         processor_telemetry,
         tracer=telemetry.tracer("shortener_processor"),
+        destination_name=settings.click_events_queue_name,
     )
     consumer = Consumer(
         queue,
@@ -169,11 +170,15 @@ async def serve(
                 await task
         server.close()
         await server.wait_closed()
-        await runtime.engine.dispose()
-        if runtime.uninstrument_engine is not None:
-            runtime.uninstrument_engine()
-        if runtime.telemetry_shutdown is not None:
-            runtime.telemetry_shutdown()
+        try:
+            await runtime.engine.dispose()
+        finally:
+            try:
+                if runtime.uninstrument_engine is not None:
+                    runtime.uninstrument_engine()
+            finally:
+                if runtime.telemetry_shutdown is not None:
+                    runtime.telemetry_shutdown()
 
 
 def main() -> None:

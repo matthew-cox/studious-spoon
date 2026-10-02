@@ -83,3 +83,12 @@ async def test_unhandled_error_page_shows_the_request_trace_id(app, client):
     response = await client.get("/boom", headers=INCOMING)
     assert response.status_code == 500
     assert f"<code>{TRACE}</code>" in response.text
+
+
+async def test_traced_urls_are_anchored_not_substring_matches(client, spans):
+    await client.get("/healthz")
+    await client.get("/static/app.css")
+    assert spans.get_finished_spans() == ()
+    await client.get("/links/static-x")  # merely contains "static": still traced
+    await client.get("/healthzx")
+    assert len([s for s in spans.get_finished_spans() if s.kind.name == "SERVER"]) == 2

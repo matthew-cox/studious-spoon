@@ -173,6 +173,19 @@ async def test_lifespan_calls_aclose_on_shutdown(deps):
     assert closed == [True]
 
 
+async def test_lifespan_shuts_telemetry_down_even_if_aclose_fails(deps):
+    shut: list[bool] = []
+
+    async def failing() -> None:
+        raise RuntimeError("aclose failed")
+
+    app = create_app(replace(deps, aclose=failing, telemetry_shutdown=lambda: shut.append(True)))
+    with pytest.raises(RuntimeError, match="aclose failed"):
+        async with app.router.lifespan_context(app):
+            pass
+    assert shut == [True]
+
+
 # --- 8. HTML error pages for unknown routes -----------------------------------------------
 
 

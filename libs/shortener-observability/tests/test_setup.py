@@ -49,3 +49,49 @@ def test_unreachable_collector_never_blocks_logging_or_shutdown():
     started = time.monotonic()
     telemetry.shutdown()
     assert time.monotonic() - started < 5
+
+
+def _otlp_handler():
+    return next(h for h in logging.getLogger().handlers if type(h).__name__ == "LoggingHandler")
+
+
+def test_otlp_handler_rejects_exporter_transport_and_suppressed_records():
+    from opentelemetry.context import _SUPPRESS_INSTRUMENTATION_KEY, attach, detach, set_value
+
+    telemetry = configure_telemetry(
+        service_name="shortener-api", service_version="v", environment="local",
+        otlp_endpoint="http://127.0.0.1:9", log_level="DEBUG", install_globals=False,
+    )  # fmt: skip
+    otlp = _otlp_handler()
+
+    def record(name):
+        return logging.LogRecord(name, logging.DEBUG, "f", 1, "x", None, None)
+
+    assert not otlp.filter(record("urllib3.connectionpool"))
+    assert otlp.filter(record("app"))
+    token = attach(set_value(_SUPPRESS_INSTRUMENTATION_KEY, True))  # what the exporter threads do
+    try:
+        assert not otlp.filter(record("anything.else"))
+    finally:
+        detach(token)
+    assert otlp.filter(record("anything.else"))
+    telemetry.shutdown()
+
+
+def test_debug_logging_against_dead_endpoint_does_not_reingest_exporter_logs():
+    import time
+
+    telemetry = configure_telemetry(
+        service_name="shortener-api", service_version="v", environment="local",
+        otlp_endpoint="http://127.0.0.1:9", metric_export_interval_ms=100, log_level="DEBUG",
+        install_globals=False,
+    )  # fmt: skip
+    seen: list[str] = []
+    otlp = _otlp_handler()
+    original = otlp.emit
+    otlp.emit = lambda r: (seen.append(r.name), original(r))[1]  # type: ignore[method-assign]
+    telemetry.meter("m").create_counter("c").add(1)
+    logging.getLogger("app").debug("one")
+    time.sleep(1.0)  # several export cycles, each of which fails and logs at DEBUG
+    telemetry.shutdown()
+    assert seen == ["app"], seen

@@ -327,3 +327,22 @@ async def test_batch_exceeding_grace_is_cancelled_then_server_closed_and_engine_
     assert engine.disposed
     with pytest.raises(httpx.ConnectError):
         await status(base, "/healthz")
+
+
+async def test_serve_still_shuts_telemetry_down_when_engine_dispose_fails(settings, meter):
+    class FailingEngine(FakeEngine):
+        async def dispose(self) -> None:
+            raise RuntimeError("dispose failed")
+
+    calls: list[str] = []
+    rt = runtime(
+        settings, meter, IdleQueue(), Consumer(IdleQueue(), HangingProcessor(), wait_seconds=0)
+    )
+    rt.engine = FailingEngine()  # type: ignore[assignment]
+    rt.uninstrument_engine = lambda: calls.append("uninstrument")
+    rt.telemetry_shutdown = lambda: calls.append("telemetry")
+    serving = Serving(rt)
+    await serving.base()
+    with pytest.raises(RuntimeError, match="dispose failed"):
+        await serving.finish()
+    assert calls == ["uninstrument", "telemetry"]

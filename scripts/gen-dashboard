@@ -81,12 +81,12 @@ def dashboard() -> dict[str, Any]:
 def main() -> int:
     rendered = json.dumps(dashboard(), indent=2, ensure_ascii=False) + "\n"
     if "--check" in sys.argv[1:]:
-        if not OUTPUT.exists() or OUTPUT.read_text() != rendered:
+        if not OUTPUT.exists() or OUTPUT.read_text(encoding="utf-8") != rendered:
             print(f"{OUTPUT} is stale; run scripts/gen-dashboard", file=sys.stderr)
             return 1
         return 0
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(rendered)
+    OUTPUT.write_text(rendered, encoding="utf-8")
     print(f"wrote {OUTPUT}")
     return 0
 

@@ -52,7 +52,7 @@ def create_app(deps: AppDeps) -> FastAPI:
             app,
             tracer_provider=deps.tracer_provider,
             meter_provider=deps.meter_provider,
-            excluded_urls="healthz,readyz",
+            excluded_urls="/healthz$,/readyz$",
         )
         app.state.uninstrument_engine = instrument_engine(
             deps.engine.sync_engine, deps.tracer_provider, deps.meter_provider

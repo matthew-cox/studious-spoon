@@ -62,3 +62,38 @@ async def test_unhandled_500_problem_includes_trace_id(deps, token_for):
         response = await http.get("/api/v1/me", headers=token_for("eddie") | INCOMING)
     assert response.status_code == 500
     assert response.json()["trace_id"] == TRACE
+
+
+async def test_traced_urls_are_anchored_not_substring_matches(client, spans):
+    await client.get("/healthz")
+    await client.get("/readyz")
+    assert spans.get_finished_spans() == ()
+    await client.get("/api/v1/healthzx")  # merely contains the word: still traced
+    assert [s for s in spans.get_finished_spans() if s.kind.name == "SERVER"]
+
+
+async def test_http_server_metrics_have_no_host_derived_attributes(deps, spans):
+    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+    from shortener_api.main import create_app
+    from shortener_observability.setup import http_server_metric_views
+
+    reader = InMemoryMetricReader()
+    meters = MeterProvider(metric_readers=[reader], views=http_server_metric_views())
+    app = create_app(dataclasses.replace(deps, meter_provider=meters))
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    for host in ("evil-1.example", "evil-2.example:9999"):
+        async with httpx.AsyncClient(transport=transport, base_url=f"http://{host}") as http:
+            assert (await http.get("/api/v1/me")).status_code == 401
+
+    points = []
+    for resource in reader.get_metrics_data().resource_metrics:
+        for scope in resource.scope_metrics:
+            for metric in scope.metrics:
+                if metric.name.startswith("http.server"):
+                    points += [(metric.name, dict(p.attributes)) for p in metric.data.data_points]
+    assert points
+    for _, attrs in points:
+        assert not {k for k in attrs if "server_name" in k or "host" in k}, attrs
+    durations = [a for n, a in points if n == "http.server.duration"]
+    assert len(durations) == 1 and durations[0]["http.status_code"] == 401

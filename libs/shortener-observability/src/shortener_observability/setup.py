@@ -5,6 +5,7 @@ import warnings
 from dataclasses import dataclass, field
 
 from opentelemetry import metrics, trace
+from opentelemetry.context import _SUPPRESS_INSTRUMENTATION_KEY, get_value
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -13,6 +14,7 @@ from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import MetricReader, PeriodicExportingMetricReader
+from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -21,6 +23,44 @@ from opentelemetry.trace import Tracer
 from shortener_observability.logs import configure_logging
 
 _EXPORT_TIMEOUT_S = 2  # bounds retries against an unreachable collector, so shutdown stays quick
+
+
+# Old-semconv HTTP server metrics copy the request Host header into `http.server_name` (plus
+# host/port keys), which is attacker-controlled and would create unbounded series. Keep only
+# bounded keys; `http.target` is the route template, not the raw path.
+_HTTP_SERVER_METRIC_KEYS = frozenset(
+    {
+        "http.method",
+        "http.scheme",
+        "http.status_code",
+        "http.flavor",
+        "http.target",
+        "http.request.method",
+        "http.response.status_code",
+        "http.route",
+        "url.scheme",
+        "error.type",
+    }
+)
+
+
+def http_server_metric_views() -> list[View]:
+    """Views bounding the cardinality of every `http.server.*` metric (duration, size, active)."""
+    return [View(instrument_name="http.server.*", attribute_keys=set(_HTTP_SERVER_METRIC_KEYS))]
+
+
+_TRANSPORT_LOGGERS = ("opentelemetry", "urllib3", "requests")
+
+
+def _not_exporter_noise(record: logging.LogRecord) -> bool:
+    """Keep the exporters' own activity out of the OTLP log pipeline (it would feed itself).
+
+    The batch processors and the periodic reader run exports with instrumentation suppressed, so
+    that covers their urllib3/requests DEBUG lines; the logger-name check is a second guard.
+    """
+    if get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+        return False
+    return not record.name.startswith(_TRANSPORT_LOGGERS)
 
 
 @dataclass
@@ -92,10 +132,11 @@ def configure_telemetry(
             # add a dependency; the SDK handler is the supported path until that is removed.
             warnings.simplefilter("ignore", DeprecationWarning)
             otlp_handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
-        # The exporters log their own delivery failures; re-ingesting those would feed the pipeline.
-        otlp_handler.addFilter(lambda record: not record.name.startswith("opentelemetry"))
+        otlp_handler.addFilter(_not_exporter_noise)
         extra_handlers.append(otlp_handler)
-    meter_provider = MeterProvider(resource=resource, metric_readers=readers)
+    meter_provider = MeterProvider(
+        resource=resource, metric_readers=readers, views=http_server_metric_views()
+    )
 
     configure_logging(service_name, level=log_level, extra_handlers=extra_handlers)
     if install_globals:

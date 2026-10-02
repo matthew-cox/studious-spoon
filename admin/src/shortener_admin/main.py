@@ -76,10 +76,12 @@ def create_app(deps: AdminDeps) -> FastAPI:
         try:
             yield
         finally:
-            if deps.aclose is not None:
-                await deps.aclose()
-            if deps.telemetry_shutdown is not None:
-                deps.telemetry_shutdown()
+            try:
+                if deps.aclose is not None:
+                    await deps.aclose()
+            finally:
+                if deps.telemetry_shutdown is not None:
+                    deps.telemetry_shutdown()
 
     app = FastAPI(
         title="Shortener admin",
@@ -148,7 +150,7 @@ def create_app(deps: AdminDeps) -> FastAPI:
             app,
             tracer_provider=deps.tracer_provider,
             meter_provider=deps.meter_provider,
-            excluded_urls="healthz,readyz,static",
+            excluded_urls="/healthz$,/readyz$,/static/",
             server_request_hook=_redact_query,
         )
         HTTPXClientInstrumentor.instrument_client(
@@ -185,9 +187,13 @@ def build_deps(settings: AdminSettings, *, install_globals: bool = True) -> Admi
     )
 
     async def aclose() -> None:
-        await api_http.aclose()
-        await engine.dispose()
-        uninstrument_engine()
+        try:
+            await api_http.aclose()
+        finally:
+            try:
+                await engine.dispose()
+            finally:
+                uninstrument_engine()
 
     return AdminDeps(
         settings=settings,

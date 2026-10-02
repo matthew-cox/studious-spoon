@@ -46,6 +46,7 @@ class BatchProcessor:
         clock: Callable[[], datetime] = utc_now,
         perf_counter: Callable[[], float] = time.perf_counter,
         tracer: Tracer | None = None,
+        destination_name: str = "click-events",
     ) -> None:
         self._queue = queue
         self._resolver = resolver
@@ -54,6 +55,7 @@ class BatchProcessor:
         self._clock = clock
         self._perf_counter = perf_counter
         self._tracer = tracer or trace.get_tracer(__name__)
+        self._destination_name = destination_name
 
     def _decode(
         self, messages: Sequence[ReceivedMessage]
@@ -98,7 +100,7 @@ class BatchProcessor:
             links=links,
             attributes={
                 "messaging.system": "aws_sqs",
-                "messaging.destination.name": "click-events",
+                "messaging.destination.name": self._destination_name,
                 "messaging.batch.message_count": len(messages),
             },
         ):
