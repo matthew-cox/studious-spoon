@@ -131,13 +131,15 @@ def test_click_trace_links_into_the_processor(e2e_settings):
             search = grafana(
                 e2e_settings,
                 "/api/datasources/proxy/uid/tempo/api/search",
+                # Ask Tempo for the batch that links to this trace, so a busy stack can't push
+                # it out of the result page; the loop below still checks the link itself.
                 q=(
                     '{resource.service.name="shortener-click-processor"'
-                    ' && name="process click batch"}'
+                    f' && name="process click batch" && link:traceID = "{trace_id}"}}'
                 ),
                 start=now - 600,
                 end=now + 60,
-                limit=50,
+                limit=5,
             ).json()
             for found in search.get("traces", []):
                 body = grafana(
