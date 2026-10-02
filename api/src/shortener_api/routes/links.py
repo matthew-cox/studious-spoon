@@ -7,7 +7,15 @@ from shortener_api.auth import current_principal
 from shortener_api.deps import AppDeps, get_deps
 from shortener_api.links_repo import LinkQuery, LinkRepository
 from shortener_api.policy import Principal
-from shortener_api.schemas import BlockRequest, LinkCreate, LinkOut, LinkPage, LinkUpdate, MeOut
+from shortener_api.schemas import (
+    BlockRequest,
+    LinkCreate,
+    LinkEventOut,
+    LinkOut,
+    LinkPage,
+    LinkUpdate,
+    MeOut,
+)
 from shortener_api.service import LinkService
 
 router = APIRouter(prefix="/api/v1", tags=["links"])
@@ -99,3 +107,11 @@ async def unblock_link(
     link_id: UUID, principal: CurrentPrincipal, service: Service, deps: Deps
 ) -> LinkOut:
     return LinkOut.of(await service.unblock(principal, link_id), _base(deps))
+
+
+@router.get("/links/{link_id}/events")
+async def link_events(
+    link_id: UUID, principal: CurrentPrincipal, service: Service
+) -> list[LinkEventOut]:
+    """Moderation history (block, unblock, delete), oldest first. Admins only."""
+    return [LinkEventOut.of(e) for e in await service.events(principal, link_id)]

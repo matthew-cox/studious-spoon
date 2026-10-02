@@ -60,6 +60,31 @@
 </section>
 {% endif %}
 
+{% if can_block %}
+<section>
+  <h2>History</h2>
+  {% if history is none %}
+  <p>History unavailable.</p>
+  {% elif not history %}
+  <p>No moderation actions yet.</p>
+  {% else %}
+  <table>
+    <thead><tr><th>When</th><th>Action</th><th>By</th><th>Reason</th></tr></thead>
+    <tbody>
+    {% for event in history %}
+      <tr>
+        <td>{{ event.occurred_at | as_of }}</td>
+        <td>{{ {"block": "Blocked", "unblock": "Unblocked", "delete": "Deleted"}[event.action] }}</td>
+        <td>{{ event.actor_username }}</td>
+        <td>{{ event.reason or "" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endif %}
+
 {% if stats %}
 <section>
   <h2>Clicks</h2>

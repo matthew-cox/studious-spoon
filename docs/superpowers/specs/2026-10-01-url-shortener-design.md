@@ -197,6 +197,7 @@ The owner's switch and the admin block are deliberately separate (D6):
   - `DELETE` → `409 Conflict`, so the record is kept as evidence.
 - **Admins** can block, unblock, edit, and delete any link, blocked or not.
 - **Unblocking** clears all three `blocked_*` columns. The link goes back to its previous `is_active` value.
+- **Moderation history:** every block, unblock and delete writes a row to `public.link_events` (link id and code, action, actor sub and username as of that moment, reason, time) in the same transaction as the change. There is no foreign key, so the history survives a deleted link. `api_user` has only `SELECT, INSERT` on it (append-only, migration 0003). `GET /api/v1/links/{id}/events` is admin-only (`Action.AUDIT`), and the admin UI shows it as a History section on the link page. Owners see the block reason on the link but never who blocked it.
 - **Admin UI:** a "Blocked" badge and the reason are shown to everyone who can see the link. Admins get block/unblock controls; blocking requires entering a reason.
 - **Future edge caching:** once redirects are cached in CloudFront, block, disable, update, and delete must also trigger a CloudFront invalidation for `/{code}` (§12).
 
@@ -455,7 +456,7 @@ Not built in this iteration; the design leaves room for each.
 7. **Redirect caching (Redis / ElastiCache):** cache-aside on `code → (target_url, status)`, cleared when a link is updated or blocked. Justified by the `shortener.redirect.duration` metrics.
 8. **Teams / orgs:** Keycloak groups → `org_id` on links; the policy function gains org-scoped rules.
 9. **Embedded Grafana panels:** an admin-only "System health" page in the admin UI showing service metrics.
-10. **Audit log:** an append-only `link_audit` table (who, what, when, before/after) for all link changes, including block/unblock.
+10. **Full audit log:** extend `public.link_events` (§4.3) from moderation actions to every link change (create, update with before/after, enable/disable), plus an admin-wide audit page with filters.
 11. **Playwright UI tests** (real-browser checks of the admin UI; HTTP-level e2e can't see htmx behaviour).
 12. **Domain blocklist:** target domains checked on create/update; blocked domains rejected with `422`.
 13. **Block appeals:** an owner-initiated appeal workflow for blocked links.

@@ -128,6 +128,9 @@ class ApiClient:
     async def unblock_link(self, token: str, link_id: str) -> Any:
         return await self._call("POST", f"/api/v1/links/{link_id}/unblock", token)
 
+    async def link_events(self, token: str, link_id: str) -> Any:
+        return await self._call("GET", f"/api/v1/links/{link_id}/events", token)
+
     async def link_stats(
         self,
         token: str,

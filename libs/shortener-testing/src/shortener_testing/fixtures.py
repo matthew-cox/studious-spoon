@@ -98,6 +98,7 @@ def reset_database(migrated: PgServer) -> None:
     """Return the database to its post-migration state. Wrap it in an autouse fixture per suite."""
     with migrated.connect("migrator") as conn:
         conn.execute("TRUNCATE public.links CASCADE")  # cascades to analytics rollups
+        conn.execute("TRUNCATE public.link_events")  # no FK to links: outlives deletes
         conn.execute("UPDATE analytics.pipeline_status SET last_committed_at = NULL")
         conn.execute("TRUNCATE admin.sessions")
 

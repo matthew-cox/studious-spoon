@@ -53,7 +53,7 @@ class RacingRepo:
         self._written = True
         return None if require_unblocked else self.link
 
-    async def delete(self, link_id, *, require_unblocked=False):
+    async def delete(self, link_id, *, actor, now, require_unblocked=False):
         self.write_flags.append(require_unblocked)
         self._written = True
         return not require_unblocked

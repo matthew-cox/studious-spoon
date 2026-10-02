@@ -49,6 +49,10 @@ MATRIX = [
     (ADMIN, Action.BLOCK, OTHERS, A), (ADMIN, Action.BLOCK, OTHERS_BLOCKED, A),
     (EDITOR, Action.BLOCK, OWN, F), (EDITOR, Action.BLOCK, OTHERS, N),
     (VIEWER, Action.BLOCK, OTHERS, F), (NOBODY, Action.BLOCK, OTHERS, F),
+    # audit history: admins only; the owner sees the block reason on the link, not who did it
+    (ADMIN, Action.AUDIT, OTHERS_BLOCKED, A), (EDITOR, Action.AUDIT, OWN_BLOCKED, F),
+    (EDITOR, Action.AUDIT, OTHERS, N), (VIEWER, Action.AUDIT, OTHERS, F),
+    (NOBODY, Action.AUDIT, OTHERS, F),
 ]  # fmt: skip
 
 

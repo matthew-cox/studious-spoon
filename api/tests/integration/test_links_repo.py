@@ -4,6 +4,9 @@ from uuid import uuid4
 import pytest
 
 from shortener_api.links_repo import CodeTakenError, LinkQuery, LinkRepository
+from shortener_api.policy import Principal
+
+ALICE = Principal("sub-alice", "alice", frozenset({"admin"}))
 
 pytestmark = pytest.mark.integration
 
@@ -64,7 +67,7 @@ async def test_search_by_status(repo, clock):
     disabled = await make(repo, clock, code="disabl0")
     blocked = await make(repo, clock, code="blocke0")
     await repo.update(disabled.id, now=clock.now(), is_active=False)
-    await repo.block(blocked.id, by="sub-alice", reason="spam", now=clock.now())
+    await repo.block(blocked.id, actor=ALICE, reason="spam", now=clock.now())
     found = (await repo.search(LinkQuery(status="active"))).items
     assert [link.id for link in found] == [active.id]
     found = (await repo.search(LinkQuery(status="disabled"))).items
@@ -85,7 +88,7 @@ async def test_update_sets_fields_and_updated_at(repo, clock):
 
 async def test_owner_update_is_refused_once_blocked(repo, clock):
     link = await make(repo, clock)
-    await repo.block(link.id, by="sub-alice", reason="phishing", now=clock.now())
+    await repo.block(link.id, actor=ALICE, reason="phishing", now=clock.now())
     result = await repo.update(
         link.id, now=clock.now(), target_url="https://clean.example/", require_unblocked=True
     )
@@ -95,21 +98,21 @@ async def test_owner_update_is_refused_once_blocked(repo, clock):
 
 async def test_owner_delete_is_refused_once_blocked(repo, clock):
     link = await make(repo, clock)
-    await repo.block(link.id, by="sub-alice", reason="phishing", now=clock.now())
-    assert await repo.delete(link.id, require_unblocked=True) is False
+    await repo.block(link.id, actor=ALICE, reason="phishing", now=clock.now())
+    assert await repo.delete(link.id, actor=ALICE, now=clock.now(), require_unblocked=True) is False
     assert await repo.get(link.id) is not None
-    assert await repo.delete(link.id) is True  # the admin path
+    assert await repo.delete(link.id, actor=ALICE, now=clock.now()) is True  # the admin path
     assert await repo.get(link.id) is None
 
 
 async def test_block_and_unblock_preserve_is_active(repo, clock):
     link = await make(repo, clock)
     await repo.update(link.id, now=clock.now(), is_active=False)
-    blocked = await repo.block(link.id, by="sub-alice", reason="spam", now=clock.now())
+    blocked = await repo.block(link.id, actor=ALICE, reason="spam", now=clock.now())
     assert blocked.status == "blocked"
     assert blocked.facts().blocked is True
-    assert await repo.block(link.id, by="sub-alice", reason="again", now=clock.now()) is None
-    unblocked = await repo.unblock(link.id, now=clock.now())
+    assert await repo.block(link.id, actor=ALICE, reason="again", now=clock.now()) is None
+    unblocked = await repo.unblock(link.id, actor=ALICE, now=clock.now())
     assert unblocked.status == "disabled"  # returns to the owner's previous choice
     assert unblocked.blocked_by is None and unblocked.blocked_reason is None
-    assert await repo.unblock(link.id, now=clock.now()) is None
+    assert await repo.unblock(link.id, actor=ALICE, now=clock.now()) is None

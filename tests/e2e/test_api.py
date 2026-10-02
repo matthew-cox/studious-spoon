@@ -63,5 +63,11 @@ def test_link_lifecycle(api, auth):
     assert blocked.status_code == 200
     assert api.patch(url, json={"is_active": True}, headers=auth("eddie")).status_code == 409
     assert api.get(f"/{link['code']}").status_code == 410
+    assert api.get(f"{url}/events", headers=auth("eddie")).status_code == 403  # admins only
 
     assert api.delete(url, headers=auth("alice")).status_code == 204
+    history = api.get(f"{url}/events", headers=auth("alice")).json()  # outlives the link
+    assert [(e["action"], e["actor_username"], e["reason"]) for e in history] == [
+        ("block", "alice", "e2e abuse test"),
+        ("delete", "alice", None),
+    ]

@@ -39,9 +39,14 @@ def detail_routes(mocks, ids, link=LINK, stats=STATS):
     return mocks.get(f"{ids['API']}/api/v1/links/{LID}/stats").respond(json=stats)
 
 
+def admin_detail_routes(mocks, ids, events=()):
+    detail_routes(mocks, ids)
+    return mocks.get(f"{ids['API']}/api/v1/links/{LID}/events").respond(json=list(events))
+
+
 async def test_admin_sees_block_form_and_blocks_with_reason(client, mocks, ids, login_as):
     session = await login_as("alice", ("admin",))
-    detail_routes(mocks, ids)
+    admin_detail_routes(mocks, ids)
     assert f'action="/links/{LID}/block"' in (await client.get(f"/links/{LID}")).text
     route = mocks.post(f"{ids['API']}/api/v1/links/{LID}/block").respond(json=LINK)
     response = await client.post(
@@ -53,7 +58,7 @@ async def test_admin_sees_block_form_and_blocks_with_reason(client, mocks, ids, 
 
 async def test_double_block_shows_conflict_inline(client, mocks, ids, login_as):
     session = await login_as("alice", ("admin",))
-    detail_routes(mocks, ids)
+    admin_detail_routes(mocks, ids)
     mocks.post(f"{ids['API']}/api/v1/links/{LID}/block").respond(
         409, json={"title": "Link is already blocked", "status": 409}
     )
@@ -122,3 +127,64 @@ async def test_stats_failure_does_not_break_the_detail_page(client, mocks, ids, 
     )
     response = await client.get(f"/links/{LID}")
     assert response.status_code == 200 and 'id="stats"' not in response.text
+
+
+EVENTS = [
+    {
+        "id": 1,
+        "link_id": LID,
+        "link_code": "aZ3kQ9x",
+        "action": "block",
+        "actor_username": "alice",
+        "reason": "<script>phish</script>",
+        "occurred_at": "2026-10-01T10:30:00Z",
+    },
+    {
+        "id": 2,
+        "link_id": LID,
+        "link_code": "aZ3kQ9x",
+        "action": "unblock",
+        "actor_username": "alice",
+        "reason": None,
+        "occurred_at": "2026-10-01T11:00:00Z",
+    },
+]
+
+
+def history_section(page: str) -> str:
+    start = page.index("<h2>History</h2>")
+    return page[start : page.index("</section>", start)]
+
+
+async def test_admin_sees_moderation_history(client, mocks, ids, login_as):
+    await login_as("alice", ("admin",))
+    admin_detail_routes(mocks, ids, EVENTS)
+    history = history_section((await client.get(f"/links/{LID}")).text)
+    assert "Blocked" in history and "Unblocked" in history
+    assert "alice" in history
+    assert "2026-10-01 10:30:00 UTC" in history
+    assert "&lt;script&gt;phish&lt;/script&gt;" in history and "<script>" not in history
+
+
+async def test_admin_sees_empty_history(client, mocks, ids, login_as):
+    await login_as("alice", ("admin",))
+    admin_detail_routes(mocks, ids)
+    assert "No moderation actions yet." in history_section((await client.get(f"/links/{LID}")).text)
+
+
+async def test_non_admins_never_request_history(client, mocks, ids, login_as):
+    await login_as()  # eddie, the owner
+    detail_routes(mocks, ids)
+    route = mocks.get(f"{ids['API']}/api/v1/links/{LID}/events").respond(json=EVENTS)
+    page = (await client.get(f"/links/{LID}")).text
+    assert not route.called
+    assert "<h2>History</h2>" not in page
+
+
+async def test_history_failure_does_not_break_the_page(client, mocks, ids, login_as):
+    await login_as("alice", ("admin",))
+    detail_routes(mocks, ids)
+    mocks.get(f"{ids['API']}/api/v1/links/{LID}/events").respond(500)
+    response = await client.get(f"/links/{LID}")
+    assert response.status_code == 200
+    assert "History unavailable." in history_section(response.text)

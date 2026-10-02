@@ -93,12 +93,24 @@ async def _stats(
     return stats
 
 
+async def _history(deps: AdminDeps, session: Session, link_id: str) -> list[Any] | None:
+    """Moderation history for admins (the API refuses everyone else); None if unavailable."""
+    try:
+        events: list[Any] = await deps.api.link_events(session.tokens.access_token, link_id)
+    except ApiError as exc:
+        if exc.status in PASS_THROUGH:
+            raise
+        return None
+    return events
+
+
 async def _detail(
     request: Request, deps: AdminDeps, session: Session, link_id: str, *,
     notice: str | None = None, error: ApiError | None = None, bucket: str = "hour",
 ) -> HTMLResponse:  # fmt: skip
     link = await deps.api.get_link(session.tokens.access_token, link_id)
     stats = await _stats(deps, session, link_id, bucket)
+    history = await _history(deps, session, link_id) if session.is_admin else None
     return render(
         request,
         "link_detail.html",
@@ -108,6 +120,7 @@ async def _detail(
         error=api_message(error) if error else None,
         can_edit=_can_edit(session, link),
         can_block=session.is_admin,
+        history=history,
         stats=stats,
         chart=chart_data(stats, bucket) if stats else None,
         bucket=bucket,

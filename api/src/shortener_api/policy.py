@@ -38,6 +38,7 @@ class Action(StrEnum):
     UPDATE = "update"
     DELETE = "delete"
     BLOCK = "block"  # block and unblock
+    AUDIT = "audit"  # a link's moderation history (who blocked, unblocked, deleted it)
 
 
 class Decision(Enum):
@@ -76,7 +77,7 @@ def decide(principal: Principal, action: Action, link: LinkFacts | None = None) 
         if owns:
             return Decision.CONFLICT if facts.blocked else Decision.ALLOW
         return Decision.FORBIDDEN if principal.is_viewer else Decision.NOT_FOUND
-    # Action.BLOCK: admins only. Callers who can see the link get 403; others get 404.
+    # Action.BLOCK, Action.AUDIT: admins only. Callers who can see the link get 403; others get 404.
     return Decision.FORBIDDEN if owns or principal.is_viewer else Decision.NOT_FOUND
 
 
