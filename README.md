@@ -6,10 +6,30 @@ and OpenTelemetry. Runs entirely locally; designed to map onto AWS (see the spec
 - Design spec: `docs/superpowers/specs/2026-10-01-url-shortener-design.md`
 - Implementation plans: `docs/superpowers/plans/`
 
-## Prerequisites
+## Prerequisites macOS
 
-- Docker with Compose v2 (Docker Desktop, or colima: `colima start --cpu 4 --memory 8`)
-- [uv](https://docs.astral.sh/uv/) 0.12+
+### Homebrew
+
+[Homebrew](https://brew.sh) is the package manager used to install the core toolchain.
+
+**Install Homebrew** (if not already installed):
+
+    ❯ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+### Python tooling
+
+**Install Python, pipx, and uv:**
+
+    ❯ brew install python pipx uv
+    ❯ pipx ensurepath
+
+> `pipx` installs Python CLI tools (like `pre-commit`) into isolated environments.
+> [uv](https://docs.astral.sh/uv/) is the fast Python package manager used for all project dependencies and script execution.
+
+### Virtualization
+
+- Docker with Compose v2 (Docker Desktop)
+- OR [colima](https://colima.run) (`brew install colima`): `colima start --vm-type vz --cpu 4 --memory 8`
 
 Integration tests use testcontainers. `make test` / `make check` / `make e2e` (and
 `scripts/test.sh <pytest args>`) detect your Docker runtime from the active Docker context
@@ -100,6 +120,7 @@ make fmt      # auto-format and fix lint
 
 ## Troubleshooting
 
+- **Containers OOM-killed (exit 137, Tempo/Keycloak vanishing):** the full stack needs roughly 3 GiB. Run colima with `colima start --memory 8` (per-container caps are `*_MEM_LIMIT` in `.env.example`).
 - **Realm changes not applied:** Keycloak imports the realm only when it doesn't exist. Run `make down && make up`.
 - **Changed a password or the Keycloak admin in `.env`:** Postgres roles and the Keycloak bootstrap admin are created once per data volume. Run `make down && make up` to recreate them.
 - **`Account is not fully set up` on login:** the user is missing email/first/last name in `users.yaml`.

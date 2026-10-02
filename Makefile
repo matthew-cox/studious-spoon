@@ -15,6 +15,11 @@ TOKEN_USER = $(if $(filter command line,$(origin USER)),$(USER),alice)
 
 .PHONY: sync lint fmt typecheck test check up down logs migrate seed-users token e2e
 
+# uv sync creates/updates .venv automatically; touch it to update mtime.
+.venv: pyproject.toml uv.lock
+	uv sync --all-packages --frozen
+	touch .venv
+
 sync:
 	uv sync --all-packages --frozen
 
