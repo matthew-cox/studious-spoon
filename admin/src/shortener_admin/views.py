@@ -23,6 +23,7 @@ def render(
     context = {
         "session": getattr(request.state, "session", None),
         "trace_id": current_trace_id(),
+        "observability_url": deps.settings.observability_url,
         **context,
     }
     return deps.templates.TemplateResponse(request, template, context, status_code=status_code)

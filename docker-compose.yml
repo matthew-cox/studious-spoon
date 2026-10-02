@@ -196,6 +196,7 @@ services:
       SERVICE_VERSION: ${GIT_SHA:-dev}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
       DEPLOYMENT_ENVIRONMENT: local
+      OBSERVABILITY_URL: http://localhost:3000/d/shortener-overview   # browser-facing; admin-only nav link
     ports:
       - "8001:8001"
     depends_on:

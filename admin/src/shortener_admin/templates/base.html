@@ -19,6 +19,9 @@
         <li><a href="/links">Links</a></li>
         {% if session.can_create %}<li><a href="/links/new">New link</a></li>{% endif %}
         {% endif %}
+        {% if session and session.is_admin and observability_url %}
+        <li><a href="{{ observability_url }}" target="_blank" rel="noopener">Observability ↗</a></li>
+        {% endif %}
       </ul>
       {% if session %}
       <ul>

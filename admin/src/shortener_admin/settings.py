@@ -24,6 +24,8 @@ class AdminSettings(BaseSettings):
     otel_metric_export_interval_ms: int = Field(default=10_000, ge=1_000)
     log_level: str = "INFO"
     service_version: str = "dev"
+    # Browser-facing observability UI (Grafana dashboard); unset hides the admin nav link.
+    observability_url: AnyHttpUrl | None = None
 
     @property
     def redirect_uri(self) -> str:

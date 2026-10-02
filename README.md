@@ -81,6 +81,7 @@ The click-processor rolls clicks into `analytics.*` within a second or two; `GET
 - Sign in at http://localhost:8001 as `alice` (admin), `eddie`/`erin` (editor), `victor` (viewer) or `nora` (no access).
 - Every action goes through the API with your own token, so what you can do is exactly what the API allows.
 - Sessions are server-side in `admin.sessions`; the browser only holds an opaque `sid`.
+- Admins get an **Observability ↗** link in the nav that opens the Grafana dashboard (`OBSERVABILITY_URL`).
 
 ## Observability
 

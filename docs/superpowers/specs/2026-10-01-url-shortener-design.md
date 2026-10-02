@@ -372,6 +372,7 @@ Jinja2 + HTMX, with Pico.css for styling and Chart.js for charts. All vendored u
 - `ApiClient` (httpx) adds `Authorization: Bearer <access_token>` and converts problem+json into a typed `ApiError`.
 - CSRF: the per-session token is rendered into `<body hx-headers='{"X-CSRF-Token": "..."}'>` and into a hidden field for non-HTMX forms. It is checked on all unsafe methods.
 - A user with no roles sees a "no access" page with a logout button.
+- Admins see an **Observability ↗** nav link (new tab) to the Grafana dashboard, configured by `OBSERVABILITY_URL` (hidden when unset). It only hides the link; Grafana's own access control is future work (§12).
 
 ## 9. Error Handling
 
@@ -470,6 +471,7 @@ Not built in this iteration; the design leaves room for each.
     - Duplicates between the API and CloudFront remain handled by the counting rules (§5.4), because CloudFront delivery can take longer than any reasonable window.
 18. **httpx → httpx2 migration:** Authlib 1.8 already prefers `httpx2`, and the repo silences its deprecation warning. Migrate every package at once when respx (or a replacement) supports `httpx2`, and review `httpx2`'s behaviour changes (for example, it trusts the OS certificate store via `truststore`).
 19. **Encrypt session tokens at rest in `admin.sessions`:** use envelope encryption with a KMS data key. Today they rely on database encryption at rest.
+20. **Grafana access control:** locally, otel-lgtm allows anonymous access and the admin UI only hides its Observability link from non-admins. On AWS, put Grafana behind SSO (for example Amazon Managed Grafana with IAM Identity Center) with roles mapped from Keycloak.
 
 ## 13. Testing Strategy
 
