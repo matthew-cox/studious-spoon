@@ -17,15 +17,9 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import MetricReader, PeriodicExportingMetricReader
 from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import SpanLimits, TracerProvider
+from opentelemetry.sdk.trace import SpanLimits, TracerProvider, sampling
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.trace.sampling import (
-    ALWAYS_ON,
-    Decision,
-    ParentBased,
-    Sampler,
-    SamplingResult,
-)
+from opentelemetry.sdk.trace.sampling import Decision, Sampler, SamplingResult
 from opentelemetry.trace import Link, SpanKind, Tracer, TraceState
 from opentelemetry.util.types import Attributes
 
@@ -96,16 +90,20 @@ class Telemetry:
 
 
 class SkipSqsPollingRoots(Sampler):
-    """ParentBased(always-on), except SQS polling calls never start a trace of their own.
+    """The configured sampler (OTEL_TRACES_SAMPLER, default ParentBased(always-on)), except
+    SQS polling calls never start a trace of their own.
 
     Empty long-polls and queue-depth checks would otherwise each become a root trace and bury
-    the real ones in Tempo. Inside an existing trace they are still recorded.
+    the real ones in Tempo. Inside an existing trace they are still recorded. A receive that
+    does return messages is skipped too (the sampler can't see the response); its batch is
+    traced by the processor's "process click batch" span.
     """
 
     POLLING = frozenset({"ReceiveMessage", "GetQueueAttributes", "GetQueueUrl"})
 
     def __init__(self) -> None:
-        self._delegate = ParentBased(ALWAYS_ON)
+        # Same env-driven default a bare TracerProvider uses (private helper; pinned by a test).
+        self._delegate = sampling._get_from_env_or_default()
 
     def should_sample(
         self,
@@ -130,7 +128,7 @@ class SkipSqsPollingRoots(Sampler):
         )
 
     def get_description(self) -> str:
-        return "SkipSqsPollingRoots(ParentBased(ALWAYS_ON))"
+        return f"SkipSqsPollingRoots({self._delegate.get_description()})"
 
 
 def configure_telemetry(
@@ -153,8 +151,11 @@ def configure_telemetry(
     )
     base = otlp_endpoint.rstrip("/") if otlp_endpoint else None
 
-    # The processor links one batch span to every message's producer; None keeps the SDK limit.
-    limits = SpanLimits(max_links=max_span_links) if max_span_links else SpanLimits()
+    # The processor links one batch span to every message's producer: raise (never lower) the
+    # SDK/env link limit to fit a full batch. None keeps the SDK limit.
+    limits = SpanLimits()
+    if max_span_links and (limits.max_links is None or max_span_links > limits.max_links):
+        limits = SpanLimits(max_links=max_span_links)
     tracer_provider = TracerProvider(
         resource=resource, span_limits=limits, sampler=SkipSqsPollingRoots()
     )

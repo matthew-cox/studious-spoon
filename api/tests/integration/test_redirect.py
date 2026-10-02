@@ -108,7 +108,7 @@ async def test_head_on_an_active_link_redirects_without_counting_a_click(
     [({"is_active": False}, 404), ({"blocked_reason": "spam", "blocked_by": "sub-alice"}, 410)],
 )
 async def test_head_mirrors_get_status_for_unavailable_links(
-    client, deps, insert_link, clock, kwargs, status
+    client, deps, insert_link, clock, metric_value, kwargs, status
 ):
     if "blocked_by" in kwargs:
         kwargs["blocked_at"] = clock.now()
@@ -118,3 +118,13 @@ async def test_head_mirrors_get_status_for_unavailable_links(
     assert response.content == b""
     assert (await client.head("/nope123")).status_code == 404
     assert deps.publisher.events == []
+    assert metric_value("shortener.redirects") == 0  # before any GET below
+
+
+@pytest.mark.parametrize("path", ["/head003", "/nope123", "/off0003"])
+async def test_head_headers_match_get(client, insert_link, path):
+    insert_link(code="head003")
+    insert_link(code="off0003", is_active=False)
+    head, get = await client.head(path), await client.get(path)
+    assert head.status_code == get.status_code
+    assert dict(head.headers) == dict(get.headers)

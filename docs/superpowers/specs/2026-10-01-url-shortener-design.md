@@ -276,8 +276,8 @@ Loop:
 
 | Source | Counts | Status |
 |---|---|---|
-| `api` | Every successful `302` the API itself serves (`result=ok`) | Built now |
-| `cloudfront` | Only edge cache hits: `x-edge-result-type` ∈ {`Hit`, `RefreshHit`} with status 302 | Future (§12) |
+| `api` | Every successful `302` the API itself serves to a `GET` (`result=ok`); `HEAD` is never counted | Built now |
+| `cloudfront` | Only edge cache hits: `x-edge-result-type` ∈ {`Hit`, `RefreshHit`} with status 302 and `cs-method` = GET | Future (§12) |
 
 Each click is counted by exactly one source, so there is no need to dedupe across sources.
 
@@ -288,6 +288,7 @@ Base path for JSON endpoints: `/api/v1`. Errors are `application/problem+json` (
 | Method & Path | Roles | Behavior |
 |---|---|---|
 | `GET /{code}` | public | Active and not blocked → `302` to the target, with `Cache-Control: private, no-store`, and the click event is published. Unknown or inactive → `404`. Blocked → `410` HTML page. |
+| `HEAD /{code}` | public | Same status and headers as `GET` (`302` + `Location` / `404` / `410`), no body. Publishes no click event and records no `shortener.redirects` metric: link previews and checkers aren't clicks. |
 | `GET /healthz` | public | Liveness check |
 | `GET /readyz` | public | Readiness check: tests the DB connection. SQS is *not* checked, because redirects must keep working when SQS is down. |
 | `GET /api/v1/me` | any authenticated user (no-role users get `roles: []`) | `{sub, username, roles}` |
@@ -390,6 +391,7 @@ Jinja2 + HTMX, with Pico.css for styling and Chart.js for charts. All vendored u
 - **Resource attributes:** `service.name` (`shortener-api` / `shortener-admin` / `shortener-click-processor`), `service.version`, `deployment.environment` (`local`).
 - **Traces:** W3C `traceparent` is passed from admin to api to Postgres, so one UI action produces a single end-to-end trace in Tempo. For clicks, `traceparent` travels in SQS message attributes, and the processor's batch span **links** to each producer span (§5.3).
 - **Logs:** structured JSON to stdout, and also exported over OTLP to Loki. Every record emitted while a span is active includes `trace_id` and `span_id`.
+- **Noise control:** SQS polling calls (`ReceiveMessage`, `GetQueueAttributes`, `GetQueueUrl`) never start a trace of their own: the sampler wraps the one configured by `OTEL_TRACES_SAMPLER`, and a receive's messages are traced by the processor's `process click batch` span. The processor raises the span link limit to `batch_max_messages`, so that span keeps a link per message. Successful `/healthz` and `/readyz` access lines aren't logged (failures are).
 - **Custom metrics:**
 
 | Service | Metric | Type | Attributes |
@@ -440,7 +442,7 @@ Not built in this iteration; the design leaves room for each.
    - Block, disable, update, and delete must trigger a CloudFront invalidation for `/{code}`.
 2. **CloudFront log ingester (batch, not real-time):**
    - CloudFront standard logs → S3 → S3 event notification → SQS `cf-log-files` → ingester.
-   - The ingester parses each log file and publishes `link.clicked` v1 events (`source=cloudfront`, `event_id = x-edge-request-id`) **only for edge cache hits** (§5.4).
+   - The ingester parses each log file and publishes `link.clicked` v1 events (`source=cloudfront`, `event_id = x-edge-request-id`) **only for edge cache hits of `GET` requests** (§5.4).
    - Delivery is best-effort and usually takes minutes; that's acceptable for hourly stats. Real-time logs (Kinesis) were considered and rejected as unnecessary (D11).
 3. **Raw event archive:**
    - Firehose (or the processor) writes every `link.clicked` event to S3 as partitioned Parquet, queryable with Athena.

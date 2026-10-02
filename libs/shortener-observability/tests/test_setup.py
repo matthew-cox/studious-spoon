@@ -152,3 +152,24 @@ def test_sqs_polling_calls_do_not_start_their_own_traces():
     with tracer.start_as_current_span("GET /{code}") as span:
         assert span.is_recording()
     telemetry.shutdown()
+
+
+def test_otel_traces_sampler_env_is_still_honoured(monkeypatch):
+    monkeypatch.setenv("OTEL_TRACES_SAMPLER", "always_off")
+    telemetry = configure_telemetry(
+        service_name="shortener-api", service_version="v", environment="local",
+        otlp_endpoint=None, install_globals=False,
+    )  # fmt: skip
+    with telemetry.tracer("t").start_as_current_span("GET /{code}") as span:
+        assert not span.is_recording()
+    assert "AlwaysOff" in telemetry.tracer_provider.sampler.get_description()
+    telemetry.shutdown()
+
+
+def test_max_span_links_never_lowers_the_sdk_limit():
+    telemetry = configure_telemetry(
+        service_name="shortener-click-processor", service_version="v", environment="local",
+        otlp_endpoint=None, install_globals=False, max_span_links=100,
+    )  # fmt: skip
+    assert _links_kept(telemetry, 200) == 128
+    telemetry.shutdown()
