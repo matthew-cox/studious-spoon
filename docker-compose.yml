@@ -3,6 +3,7 @@ name: shortener
 services:
   postgres:
     image: postgres:16.10-alpine
+    mem_limit: 256m   # local-VM RAM budget (colima defaults to 2 GiB)
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD in .env (see .env.example)}
@@ -43,6 +44,7 @@ services:
 
   elasticmq:
     image: softwaremill/elasticmq-native:1.6.14
+    mem_limit: 192m   # local-VM RAM budget (colima defaults to 2 GiB)
     ports:
       - "9324:9324"
       - "9325:9325"
@@ -52,6 +54,7 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.4.0
+    mem_limit: 768m   # local-VM RAM budget (colima defaults to 2 GiB)
     command: ["start-dev", "--import-realm"]
     environment:
       KC_DB: postgres
@@ -110,6 +113,7 @@ services:
       args:
         GIT_SHA: ${GIT_SHA:-dev}
     image: shortener-api:${GIT_SHA:-dev}
+    mem_limit: 256m   # local-VM RAM budget (colima defaults to 2 GiB)
     environment:
       DATABASE_URL: postgresql+psycopg://api_user:${API_DB_PASSWORD:?set API_DB_PASSWORD in .env (see .env.example)}@postgres:5432/shortener
       PUBLIC_BASE_URL: http://localhost:8000
@@ -146,6 +150,7 @@ services:
       args:
         GIT_SHA: ${GIT_SHA:-dev}
     image: shortener-click-processor:${GIT_SHA:-dev}
+    mem_limit: 256m   # local-VM RAM budget (colima defaults to 2 GiB)
     environment:
       DATABASE_URL: postgresql+psycopg://processor_user:${PROCESSOR_DB_PASSWORD:?set PROCESSOR_DB_PASSWORD in .env (see .env.example)}@postgres:5432/shortener
       SQS_ENDPOINT_URL: http://elasticmq:9324
@@ -178,6 +183,7 @@ services:
       args:
         GIT_SHA: ${GIT_SHA:-dev}
     image: shortener-admin:${GIT_SHA:-dev}
+    mem_limit: 256m   # local-VM RAM budget (colima defaults to 2 GiB)
     environment:
       DATABASE_URL: postgresql+psycopg://admin_user:${ADMIN_DB_PASSWORD:?set ADMIN_DB_PASSWORD in .env (see .env.example)}@postgres:5432/shortener
       API_BASE_URL: http://api:8000
@@ -210,6 +216,7 @@ services:
 
   otel-lgtm:
     image: grafana/otel-lgtm:0.11.10
+    mem_limit: 1280m   # local-VM RAM budget (colima defaults to 2 GiB)
     ports:
       - "3000:3000"   # Grafana (anonymous admin in this image; local only)
       - "4317:4317"   # OTLP gRPC
