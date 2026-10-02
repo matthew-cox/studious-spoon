@@ -1,12 +1,13 @@
 #!/usr/bin/env -S uv run --quiet --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["pyyaml>=6.0"]
 # ///
 """Generate .launchpad/index.html with links to every local UI, then open it.
 
 Config is read on every run (.env.example defaults < .env < process environment), so the
-links follow port changes. Each card shows whether its service answered a quick probe.
+links follow port changes; the admin sign-in table comes from infra/keycloak/users.yaml.
+Each card shows whether its service answered a quick probe.
 DEV ONLY: lists the seeded dev users; never writes passwords or secrets from .env.
 
   scripts/launchpad            write the page and open it
@@ -28,6 +29,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROBE_TIMEOUT_SECONDS = 1.0
 
@@ -43,6 +46,20 @@ class Ui:
     probe: str
     purpose: str | tuple[str, ...]  # a plain string, or text and Code parts
     sign_in: tuple[str, ...]  # plain text and Code parts, joined as-is
+    users: tuple[tuple[str, str, str], ...] = ()  # (username, roles, password) table rows
+
+
+def load_seed_users(path: Path) -> tuple[tuple[str, str, str], ...]:
+    """Seeded dev users as table rows; empty when the file is missing or malformed."""
+    try:
+        users = yaml.safe_load(path.read_text(encoding="utf-8"))["users"]
+        return tuple(
+            (str(u["username"]), ", ".join(map(str, u.get("roles") or [])) or "(no access)",
+             str(u.get("password", "")))
+            for u in users
+        )  # fmt: skip
+    except (OSError, yaml.YAMLError, KeyError, TypeError):
+        return ()
 
 
 def read_env_file(path: Path) -> dict[str, str]:
@@ -62,15 +79,13 @@ def load_config(env_file: Path) -> dict[str, str]:
     return {**read_env_file(REPO_ROOT / ".env.example"), **read_env_file(env_file), **os.environ}
 
 
-def uis(config: dict[str, str]) -> list[Ui]:
+def uis(config: dict[str, str], users_file: Path) -> list[Ui]:
     keycloak = f"http://localhost:{config.get('KEYCLOAK_HOST_PORT') or '8080'}"
     keycloak_admin = config.get("KEYCLOAK_ADMIN_USER") or "admin"
     return [
         Ui("Admin UI", "http://localhost:8001", "http://localhost:8001/healthz",
            "Manage links, moderation and stats (HTMX).",
-           (Code("alice"), " (admin), ", Code("eddie"), " / ", Code("erin"), " (editor), ",
-            Code("victor"), " (viewer), ", Code("nora"), " (no access). Password: ",
-            Code("password"))),
+           ("see ", Code("infra/keycloak/users.yaml")), load_seed_users(users_file)),
         Ui("API docs", "http://localhost:8000/docs", "http://localhost:8000/healthz",
            "OpenAPI / Swagger for the shortener API.",
            ("Click Authorize and paste a token from ", Code("make token USER=eddie"))),
@@ -106,6 +121,22 @@ def render_parts(parts: str | tuple[str, ...]) -> str:
     )
 
 
+def render_sign_in(ui: Ui) -> str:
+    esc = html.escape
+    if not ui.users:
+        return f'  <p class="sign-in"><strong>Sign in:</strong> {render_parts(ui.sign_in)}</p>\n'
+    rows = "".join(
+        f"<tr><td><code>{esc(name)}</code></td><td>{esc(roles)}</td>"
+        f"<td><code>{esc(password)}</code></td></tr>"
+        for name, roles, password in ui.users
+    )
+    return (
+        '  <p class="sign-in"><strong>Sign in:</strong></p>\n'
+        '  <table class="users"><thead><tr><th>Username</th><th>Role</th><th>Password</th>'
+        f"</tr></thead><tbody>{rows}</tbody></table>\n"
+    )
+
+
 def render(entries: list[tuple[Ui, bool]], checked_at: datetime) -> str:
     esc = html.escape
     cards = []
@@ -120,7 +151,7 @@ def render(entries: list[tuple[Ui, bool]], checked_at: datetime) -> str:
             f'  <h2><a href="{esc(ui.url)}" target="_blank" rel="noopener">'
             f"{esc(ui.title)} ↗</a> {badge}</h2>\n"
             f"  <p>{render_parts(ui.purpose)}</p>\n"
-            f'  <p class="sign-in"><strong>Sign in:</strong> {render_parts(ui.sign_in)}</p>\n'
+            f"{render_sign_in(ui)}"
             f'  <p class="url">{esc(ui.url)}</p>\n'
             "</article>"
         )  # fmt: skip
@@ -147,6 +178,9 @@ def render(entries: list[tuple[Ui, bool]], checked_at: datetime) -> str:
           background: #8882; border: 1px solid #8884; border-radius: .25rem;
           padding: .05rem .35rem; }}
   .sign-in {{ line-height: 1.8; }}
+  table.users {{ border-collapse: collapse; margin: -.5rem 0 .5rem; }}
+  table.users th, table.users td {{ text-align: left; padding: .2rem 1.25rem .2rem 0; }}
+  table.users th {{ font-size: .85rem; border-bottom: 1px solid #8886; }}
   .url {{ color: GrayText; font-size: .85rem; }}
   .up {{ color: #1a7f37; font-size: .85rem; }}
   .down {{ color: #cf222e; font-size: .85rem; }}
@@ -182,10 +216,11 @@ def main() -> int:
     parser.add_argument("--all", action="store_true", help="also open every UI in its own tab")
     parser.add_argument("--no-open", action="store_true", help="only write the page")
     parser.add_argument("--env-file", type=Path, default=REPO_ROOT / ".env")
+    parser.add_argument("--users-file", type=Path, default=REPO_ROOT / "infra/keycloak/users.yaml")
     parser.add_argument("--output", type=Path, default=REPO_ROOT / ".launchpad/index.html")
     args = parser.parse_args()
 
-    entries = uis(load_config(args.env_file))
+    entries = uis(load_config(args.env_file), args.users_file)
     with ThreadPoolExecutor(max_workers=len(entries)) as pool:
         statuses = list(pool.map(lambda ui: is_running(ui.probe), entries))
     page = render(list(zip(entries, statuses, strict=True)), datetime.now())

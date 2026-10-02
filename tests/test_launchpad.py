@@ -40,13 +40,16 @@ def healthy_port() -> Iterator[int]:
     server.server_close()
 
 
-def run_launchpad(tmp_path: Path, env_lines: list[str], **environ: str) -> str:
+def run_launchpad(
+    tmp_path: Path, env_lines: list[str], *, users_file: Path | None = None, **environ: str
+) -> str:
     env_file = tmp_path / ".env"
     env_file.write_text("\n".join(env_lines) + "\n")
     output = tmp_path / "launchpad.html"
     env = {key: value for key, value in os.environ.items() if key != "KEYCLOAK_HOST_PORT"}
+    users = ["--users-file", str(users_file)] if users_file else []
     result = subprocess.run(
-        [str(SCRIPT), "--no-open", "--env-file", str(env_file), "--output", str(output)],
+        [str(SCRIPT), "--no-open", "--env-file", str(env_file), "--output", str(output), *users],
         capture_output=True,
         text=True,
         env={**env, **environ},
@@ -142,3 +145,41 @@ def test_sign_in_label_is_bold_and_actionable_values_are_code(tmp_path):
 def test_keycloak_card_calls_out_the_realm(tmp_path):
     html = run_launchpad(tmp_path, [f"KEYCLOAK_HOST_PORT={free_port()}"])
     assert "<code>shortener</code>" in card(html, "Keycloak console")
+
+
+USERS_YAML = """
+users:
+  - username: ada
+    password: pw-ada
+    roles: [admin]
+  - username: ed
+    password: pw-ed
+    roles: [editor, viewer]
+  - username: nobody
+    password: pw-nobody
+    roles: []
+"""
+
+
+def test_admin_card_has_a_user_table_from_users_yaml(tmp_path):
+    users_file = tmp_path / "users.yaml"
+    users_file.write_text(USERS_YAML)
+    admin = card(
+        run_launchpad(tmp_path, [f"KEYCLOAK_HOST_PORT={free_port()}"], users_file=users_file),
+        "Admin UI",
+    )
+    assert "<th>Username</th><th>Role</th><th>Password</th>" in admin
+    assert "<tr><td><code>ada</code></td><td>admin</td><td><code>pw-ada</code></td></tr>" in admin
+    assert "<td><code>ed</code></td><td>editor, viewer</td>" in admin
+    assert "<td><code>nobody</code></td><td>(no access)</td>" in admin
+
+
+def test_admin_card_falls_back_when_users_yaml_is_missing(tmp_path):
+    admin = card(
+        run_launchpad(
+            tmp_path, [f"KEYCLOAK_HOST_PORT={free_port()}"], users_file=tmp_path / "missing.yaml"
+        ),
+        "Admin UI",
+    )
+    assert "<table" not in admin
+    assert "<code>infra/keycloak/users.yaml</code>" in admin
