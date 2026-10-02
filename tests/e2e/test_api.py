@@ -39,6 +39,11 @@ def test_link_lifecycle(api, auth):
 
     assert api.get(url, headers=auth("erin")).status_code == 404
     assert api.get(url, headers=auth("victor")).status_code == 200
+    eddies = api.get(
+        "/api/v1/links", params={"owner": "eddie", "page_size": 100}, headers=auth("alice")
+    ).json()
+    assert link["id"] in {i["id"] for i in eddies["items"]}
+    assert {i["owner_username"] for i in eddies["items"]} == {"eddie"}
     forbidden = api.post(
         "/api/v1/links", json={"target_url": "https://x.example"}, headers=auth("victor")
     )

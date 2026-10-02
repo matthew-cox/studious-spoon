@@ -21,6 +21,11 @@ def link_route(mocks, ids, link=LINK):
     mocks.get(f"{ids['API']}/api/v1/links/{LID}/stats").respond(
         422, json={"title": "n/a", "status": 422}
     )
+    # The owner summary (link counts) and admins' history: not under test here.
+    mocks.get(f"{ids['API']}/api/v1/links").respond(
+        json={"items": [], "total": 0, "page": 1, "page_size": 1}
+    )
+    mocks.get(f"{ids['API']}/api/v1/links/{LID}/events").respond(json=[])
     return mocks.get(f"{ids['API']}/api/v1/links/{LID}").respond(json=link)
 
 

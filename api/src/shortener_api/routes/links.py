@@ -63,12 +63,13 @@ async def list_links(
     q: Annotated[str | None, Query(max_length=200)] = None,
     status: Literal["active", "disabled", "blocked"] | None = None,
     owner: Annotated[
-        str | None, Query(max_length=64, description="owner sub (admin/viewer only)")
+        str | None,
+        Query(max_length=255, description="owner username, exact match (narrows, never widens)"),
     ] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> LinkPage:
-    query = LinkQuery(q=q, status=status, owner_sub=owner, page=page, page_size=page_size)
+    query = LinkQuery(q=q, status=status, owner_username=owner, page=page, page_size=page_size)
     return LinkPage.of(await service.list(principal, query), _base(deps))
 
 

@@ -86,6 +86,7 @@ class ApiClient:
         *,
         q: str | None = None,
         status: str | None = None,
+        owner: str | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> Any:
@@ -94,6 +95,8 @@ class ApiClient:
             params["q"] = q
         if status:
             params["status"] = status
+        if owner:
+            params["owner"] = owner
         return await self._call("GET", "/api/v1/links", token, params=params)
 
     async def create_link(self, token: str, target_url: str) -> Any:

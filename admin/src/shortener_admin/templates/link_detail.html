@@ -14,7 +14,9 @@
 <div class="detail-grid">
 <dl>
   <dt>Target</dt><dd class="target">{{ link.target_url }}</dd>
-  <dt>Owner</dt><dd>{{ link.owner_username }}</dd>
+  <dt>Owner</dt>
+  <dd><a href="/links?{{ {"owner": link.owner_username} | urlencode }}">{{ link.owner_username }}</a>
+    {%- if owner_summary %} <span class="muted">· {{ owner_summary.total }} link{{ "" if owner_summary.total == 1 else "s" }} · <a href="/links?{{ {"owner": link.owner_username, "status": "blocked"} | urlencode }}">{{ owner_summary.blocked }} blocked</a></span>{% endif %}</dd>
   <dt>Created</dt><dd>{{ link.created_at | as_of }}</dd>
   <dt>Updated</dt><dd>{{ link.updated_at | as_of }}</dd>
 </dl>

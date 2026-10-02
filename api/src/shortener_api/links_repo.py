@@ -56,7 +56,8 @@ class LinkEvent:
 class LinkQuery:
     q: str | None = None
     status: LinkStatus | None = None
-    owner_sub: str | None = None
+    owner_sub: str | None = None  # visibility scope (policy.visible_owner)
+    owner_username: str | None = None  # caller's filter; exact match
     page: int = 1
     page_size: int = 20
 
@@ -140,6 +141,8 @@ class LinkRepository:
             conditions.append(links.c.is_active.is_(query.status == "active"))
         if query.owner_sub is not None:
             conditions.append(links.c.owner_sub == query.owner_sub)
+        if query.owner_username is not None:
+            conditions.append(links.c.owner_username == query.owner_username)
         return conditions
 
     async def search(self, query: LinkQuery) -> Page[Link]:

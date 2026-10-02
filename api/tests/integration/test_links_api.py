@@ -67,13 +67,36 @@ async def test_listing_is_scoped_for_editors(client, token_for):
     await create(client, token_for("erin"), "https://erin.example/")
     eddie = (await client.get("/api/v1/links", headers=token_for("eddie"))).json()
     assert [i["owner_username"] for i in eddie["items"]] == ["eddie"]
-    ignored = await client.get("/api/v1/links?owner=sub-erin", headers=token_for("eddie"))
-    assert [i["owner_username"] for i in ignored.json()["items"]] == ["eddie"]
+    # The owner filter narrows an editor's own scope; it never widens it.
+    others = await client.get("/api/v1/links?owner=erin", headers=token_for("eddie"))
+    assert others.json()["items"] == []
     for user in ("alice", "victor"):
         everything = (await client.get("/api/v1/links", headers=token_for(user))).json()
         assert everything["total"] == 2
-    only_erin = await client.get("/api/v1/links?owner=sub-erin", headers=token_for("alice"))
-    assert [i["owner_username"] for i in only_erin.json()["items"]] == ["erin"]
+        only_erin = await client.get("/api/v1/links?owner=erin", headers=token_for(user))
+        assert [i["owner_username"] for i in only_erin.json()["items"]] == ["erin"]
+
+
+async def test_owner_filter_is_an_exact_username_match(client, token_for):
+    await create(client, token_for("eddie"), "https://eddie.example/")
+    await create(client, token_for("erin"), "https://eddie.example/erin")
+    for owner in ("edd", "EDDIE", "eddie%"):
+        response = await client.get(f"/api/v1/links?owner={owner}", headers=token_for("alice"))
+        assert response.json()["total"] == 0, owner
+    eddie = await client.get("/api/v1/links?owner=eddie", headers=token_for("alice"))
+    assert [i["owner_username"] for i in eddie.json()["items"]] == ["eddie"]
+
+
+async def test_owner_filter_combines_with_status(client, token_for):
+    first = (await create(client, token_for("eddie"), "https://a.example/")).json()
+    await create(client, token_for("eddie"), "https://b.example/")
+    await client.post(
+        f"/api/v1/links/{first['id']}/block", json={"reason": "spam"}, headers=token_for("alice")
+    )
+    blocked = await client.get(
+        "/api/v1/links?owner=eddie&status=blocked&page_size=1", headers=token_for("alice")
+    )
+    assert blocked.json()["total"] == 1
 
 
 async def test_listing_rejects_bad_paging(client, token_for):

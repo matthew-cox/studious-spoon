@@ -5,6 +5,10 @@
 {% if deleted %}<p role="status">Link deleted.</p>{% endif %}
 <form method="get" action="/links" hx-get="/links" hx-target="#links-table" hx-swap="outerHTML" hx-push-url="true"
       hx-trigger="submit, input changed delay:300ms from:find input[name=q], change from:find select">
+  {% if owner %}
+  <input type="hidden" name="owner" value="{{ owner }}">
+  <p class="filter-chip">Owner: <strong>{{ owner }}</strong> <a href="{{ clear_owner_url }}">Clear owner</a></p>
+  {% endif %}
   <div class="grid">
     <input type="search" name="q" value="{{ q }}" placeholder="Search code or target" aria-label="Search">
     <select name="status" aria-label="Status">

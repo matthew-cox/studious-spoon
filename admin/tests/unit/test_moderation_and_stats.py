@@ -36,6 +36,9 @@ STATS = {
 
 def detail_routes(mocks, ids, link=LINK, stats=STATS):
     mocks.get(f"{ids['API']}/api/v1/links/{LID}").respond(json=link)
+    mocks.get(f"{ids['API']}/api/v1/links").respond(  # owner summary; not under test here
+        json={"items": [], "total": 0, "page": 1, "page_size": 1}
+    )
     return mocks.get(f"{ids['API']}/api/v1/links/{LID}/stats").respond(json=stats)
 
 
@@ -121,8 +124,8 @@ async def test_stats_without_htmx_redirects_to_detail(client, login_as):
 
 async def test_stats_failure_does_not_break_the_detail_page(client, mocks, ids, login_as):
     await login_as()
-    mocks.get(f"{ids['API']}/api/v1/links/{LID}").respond(json=LINK)
-    mocks.get(f"{ids['API']}/api/v1/links/{LID}/stats").respond(
+    detail_routes(mocks, ids)
+    mocks.get(f"{ids['API']}/api/v1/links/{LID}/stats").respond(  # replaces the stats route
         422, json={"title": "Invalid range", "status": 422}
     )
     response = await client.get(f"/links/{LID}")
