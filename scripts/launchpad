@@ -41,7 +41,7 @@ class Ui:
     title: str
     url: str
     probe: str
-    purpose: str
+    purpose: str | tuple[str, ...]  # a plain string, or text and Code parts
     sign_in: tuple[str, ...]  # plain text and Code parts, joined as-is
 
 
@@ -78,7 +78,8 @@ def uis(config: dict[str, str]) -> list[Ui]:
            "Shortener Overview dashboard; Explore for Tempo traces and Loki logs.",
            ("no login locally (anonymous)",)),
         Ui("Keycloak console", f"{keycloak}/admin/master/console/", f"{keycloak}/realms/shortener",
-           "Realm shortener: users, roles, clients.",
+           ("Switch to realm ", Code("shortener"),
+            " (top-left realm menu) for users, roles and clients."),
            (Code(keycloak_admin), ". Password: ", Code("KEYCLOAK_ADMIN_PASSWORD"), " in ",
             Code(".env"))),
         Ui("ElasticMQ stats", "http://localhost:9325", "http://localhost:9325",
@@ -96,8 +97,10 @@ def is_running(url: str) -> bool:
         return False
 
 
-def render_parts(parts: tuple[str, ...]) -> str:
+def render_parts(parts: str | tuple[str, ...]) -> str:
     esc = html.escape
+    if isinstance(parts, str):
+        return esc(parts)
     return "".join(
         f"<code>{esc(part)}</code>" if isinstance(part, Code) else esc(part) for part in parts
     )
@@ -116,7 +119,7 @@ def render(entries: list[tuple[Ui, bool]], checked_at: datetime) -> str:
             f'<article data-ui="{esc(ui.title)}">\n'
             f'  <h2><a href="{esc(ui.url)}" target="_blank" rel="noopener">'
             f"{esc(ui.title)} ↗</a> {badge}</h2>\n"
-            f"  <p>{esc(ui.purpose)}</p>\n"
+            f"  <p>{render_parts(ui.purpose)}</p>\n"
             f'  <p class="sign-in"><strong>Sign in:</strong> {render_parts(ui.sign_in)}</p>\n'
             f'  <p class="url">{esc(ui.url)}</p>\n'
             "</article>"

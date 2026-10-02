@@ -137,3 +137,8 @@ def test_sign_in_label_is_bold_and_actionable_values_are_code(tmp_path):
     assert "<code>kc</code>" in keycloak
     assert "<code>KEYCLOAK_ADMIN_PASSWORD</code>" in keycloak
     assert "<code>.env</code>" in keycloak
+
+
+def test_keycloak_card_calls_out_the_realm(tmp_path):
+    html = run_launchpad(tmp_path, [f"KEYCLOAK_HOST_PORT={free_port()}"])
+    assert "<code>shortener</code>" in card(html, "Keycloak console")
