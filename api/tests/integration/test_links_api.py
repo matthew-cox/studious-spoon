@@ -192,3 +192,23 @@ async def test_owner_cannot_delete_blocked_link(client, token_for, insert_link, 
     assert (
         await client.delete(f"/api/v1/links/{link_id}", headers=token_for("eddie"))
     ).status_code == 409
+
+
+@pytest.mark.parametrize(
+    "template", ["http://sho.rt/{}", "https://sho.rt/{}?utm=mail", "sho.rt/{}"]
+)
+async def test_search_finds_a_link_from_its_pasted_short_url(client, token_for, template):
+    link = (await create(client, token_for("eddie"), "https://example.com/report")).json()
+    await create(client, token_for("eddie"), "https://example.com/other")
+    response = await client.get(
+        "/api/v1/links", params={"q": template.format(link["code"])}, headers=token_for("sam")
+    )
+    assert [i["id"] for i in response.json()["items"]] == [link["id"]]
+
+
+async def test_pasted_short_url_search_stays_within_an_editors_scope(client, token_for):
+    erins = (await create(client, token_for("erin"), "https://example.com/")).json()
+    response = await client.get(
+        "/api/v1/links", params={"q": erins["short_url"]}, headers=token_for("eddie")
+    )
+    assert response.json()["items"] == []

@@ -44,6 +44,8 @@ def test_link_lifecycle(api, auth):
     ).json()
     assert link["id"] in {i["id"] for i in eddies["items"]}
     assert {i["owner_username"] for i in eddies["items"]} == {"eddie"}
+    pasted = api.get("/api/v1/links", params={"q": link["short_url"]}, headers=auth("alice"))
+    assert [i["id"] for i in pasted.json()["items"]] == [link["id"]]
     forbidden = api.post(
         "/api/v1/links", json={"target_url": "https://x.example"}, headers=auth("victor")
     )

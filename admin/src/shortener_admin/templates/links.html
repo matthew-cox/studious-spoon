@@ -10,7 +10,7 @@
   <p class="filter-chip">Owner: <strong>{{ owner }}</strong> <a href="{{ clear_owner_url }}">Clear owner</a></p>
   {% endif %}
   <div class="grid">
-    <input type="search" name="q" value="{{ q }}" placeholder="Search code or target" aria-label="Search">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search code, target or paste a short URL" aria-label="Search">
     <select name="status" aria-label="Status">
       <option value="">Any status</option>
       {% for value in statuses %}<option value="{{ value }}"{% if value == status %} selected{% endif %}>{{ value }}</option>{% endfor %}

@@ -17,7 +17,7 @@ from shortener_api.links_repo import (
 )
 from shortener_api.policy import Action, Decision, Principal, decide, visible_owner
 from shortener_api.telemetry import ApiTelemetry
-from shortener_api.urls import InvalidTargetUrl, validate_target_url
+from shortener_api.urls import InvalidTargetUrl, short_code_from, validate_target_url
 
 logger = logging.getLogger(__name__)
 MAX_CODE_ATTEMPTS = 5
@@ -106,6 +106,8 @@ class LinkService:
 
     async def list(self, principal: Principal, query: LinkQuery) -> Page[Link]:
         enforce(decide(principal, Action.LIST))
+        if query.q and (code := short_code_from(query.q, self._base_url)):
+            query = replace(query, q=code)  # a pasted short URL, e.g. from an abuse report
         scope = visible_owner(principal)
         if scope is not None:  # editors only ever see their own links
             query = replace(query, owner_sub=scope)

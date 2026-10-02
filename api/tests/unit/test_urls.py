@@ -1,6 +1,11 @@
 import pytest
 
-from shortener_api.urls import MAX_URL_LENGTH, InvalidTargetUrl, validate_target_url
+from shortener_api.urls import (
+    MAX_URL_LENGTH,
+    InvalidTargetUrl,
+    short_code_from,
+    validate_target_url,
+)
 
 OWN = "http://sho.rt"
 
@@ -84,3 +89,48 @@ def test_malformed_url_is_rejected_not_raised_as_value_error(url):
 def test_own_host_in_trailing_dot_or_escaped_form_is_rejected(url):
     with pytest.raises(InvalidTargetUrl, match="this shortener"):
         validate_target_url(url, OWN)
+
+
+# A phishing report quotes the full short URL; searching for it should find the link.
+@pytest.mark.parametrize(
+    "pasted",
+    [
+        "http://sho.rt/AbC1234",
+        "  http://sho.rt/AbC1234  ",
+        "https://sho.rt/AbC1234",  # reports often "upgrade" the scheme
+        "HTTP://SHO.RT/AbC1234",
+        "http://sho.rt:80/AbC1234",
+        "sho.rt/AbC1234",
+        "http://sho.rt/AbC1234/",
+        "http://sho.rt/AbC1234?utm_source=mail#top",
+    ],
+)
+def test_short_code_from_a_pasted_short_url(pasted):
+    assert short_code_from(pasted, OWN) == "AbC1234"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "AbC1234",  # a bare code is already a fine search term
+        "example.com",
+        "https://example.com/AbC1234",
+        "http://sho.rt",
+        "http://sho.rt/",
+        "http://sho.rt/a/b",
+        "http://sho.rt/not-a-code",
+        "http://sho.rt:8080/AbC1234",
+        "http://sho.rt:bad/AbC1234",
+        "http://[::1/AbC1234",
+        "",
+    ],
+)
+def test_short_code_from_anything_else_is_none(text):
+    assert short_code_from(text, OWN) is None
+
+
+def test_short_code_from_respects_host_port_and_base_path():
+    assert short_code_from("localhost:8000/AbC1234", "http://localhost:8000") == "AbC1234"
+    assert short_code_from("localhost:8000/AbC1234", "http://localhost:8001") is None
+    assert short_code_from("https://go.example/s/AbC1234", "https://go.example/s/") == "AbC1234"
+    assert short_code_from("https://go.example/AbC1234", "https://go.example/s") is None

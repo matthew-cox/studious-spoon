@@ -294,14 +294,15 @@ Base path for JSON endpoints: `/api/v1`. Errors are `application/problem+json` (
 | `GET /readyz` | public | Readiness check: tests the DB connection. SQS is *not* checked, because redirects must keep working when SQS is down. |
 | `GET /api/v1/me` | any authenticated user (no-role users get `roles: []`) | `{sub, username, roles}` |
 | `POST /api/v1/links` | editor, admin | Body `{target_url}` → `201` with the link, including `short_url` |
-| `GET /api/v1/links` | viewer, editor, admin | Query: `q` (matches code or target), `status` (`active\|disabled\|blocked`), `owner` (admin/viewer only; ignored for editors, who always see only their own links), `page`, `page_size` (max 100). Editors only get their own links. |
-| `GET /api/v1/links/{id}` | viewer, editor (own), admin | Editors get `404` for links they don't own |
+| `GET /api/v1/links` | viewer, support, editor, admin | Query: `q` (matches code or target; a pasted short URL of this shortener, e.g. `https://sho.rt/AbC1234?x`, searches for its code), `status` (`active\|disabled\|blocked`), `owner` (owner username, exact match; narrows the caller's scope, never widens it), `page`, `page_size` (max 100). Editors only get their own links. |
+| `GET /api/v1/links/{id}` | viewer, support, editor (own), admin | Editors get `404` for links they don't own |
 | `PATCH /api/v1/links/{id}` | editor (own), admin | Body `{target_url?, is_active?}`. Owner on a blocked link → `409`. |
 | `DELETE /api/v1/links/{id}` | editor (own), admin | `204`. Owner on a blocked link → `409`. Rollups are removed by cascade. |
-| `POST /api/v1/links/{id}/block` | admin | Body `{reason}` (required, 1–1000 chars) → `200`. Already blocked → `409`. |
-| `POST /api/v1/links/{id}/unblock` | admin | `200`. Not blocked → `409`. |
-| `GET /api/v1/links/{id}/stats` | viewer, editor (own), admin | Query `from`, `to` (default: last 7 days), `bucket=hour\|day`. Returns `{total, series:[{ts,count}], top_referrers:[{referrer_host,count}], data_as_of}`. Top referrers: top 10 over the range. `data_as_of` = `pipeline_status.last_committed_at`. |
-| `GET /api/v1/stats/summary` | viewer, editor, admin | For the dashboard: `{link_count, clicks_7d, top_links:[{id, code, clicks_7d}], data_as_of}`. Editors only get their own links. |
+| `POST /api/v1/links/{id}/block` | support, admin | Body `{reason}` (required, 1–1000 chars) → `200`. Already blocked → `409`. |
+| `POST /api/v1/links/{id}/unblock` | support, admin | `200`. Not blocked → `409`. |
+| `GET /api/v1/links/{id}/events` | support, admin | Moderation history (§4.3), oldest first: `[{id, link_id, link_code, action, actor_username, reason, occurred_at}]`. Still readable after the link is deleted. |
+| `GET /api/v1/links/{id}/stats` | viewer, support, editor (own), admin | Query `from`, `to` (default: last 7 days), `bucket=hour\|day`. Returns `{total, series:[{ts,count}], top_referrers:[{referrer_host,count}], data_as_of}`. Top referrers: top 10 over the range. `data_as_of` = `pipeline_status.last_committed_at`. |
+| `GET /api/v1/stats/summary` | viewer, support, editor, admin | For the dashboard: `{link_count, clicks_7d, top_links:[{id, code, clicks_7d}], data_as_of}`. Editors only get their own links. |
 
 ### 6.1 Permission Policy
 
