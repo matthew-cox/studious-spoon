@@ -19,18 +19,16 @@ and OpenTelemetry. Runs entirely locally; designed to map onto AWS (see the spec
 
 ### Python tooling
 
-**Install Python, pipx, and uv:**
+**Install uv:**
 
-    ❯ brew install python pipx uv
-    ❯ pipx ensurepath
+    ❯ brew install uv
 
-> `pipx` installs Python CLI tools (like `pre-commit`) into isolated environments.
 > [uv](https://docs.astral.sh/uv/) is the fast Python package manager used for all project dependencies and script execution.
 
 ### Virtualization
 
-- Docker with Compose v2 (Docker Desktop)
-- OR [colima](https://colima.run) (`brew install colima`): `colima start --vm-type vz --cpu 4 --memory 8`
+- Docker with Compose v2 (`brew install docker-desktop`) - easier
+- OR [colima](https://colima.run) (`./scripts/install-colima.sh`) - more fragile but free: `colima start --vm-type vz --cpu 4 --memory 8`
 
 Integration tests use testcontainers. `make test` / `make check` / `make e2e` (and
 `scripts/test.sh <pytest args>`) detect your Docker runtime from the active Docker context
