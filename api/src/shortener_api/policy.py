@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum, StrEnum
 from typing import cast
 
-MANAGED_ROLES = frozenset({"admin", "editor", "viewer"})
+MANAGED_ROLES = frozenset({"admin", "editor", "viewer", "support"})
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,19 @@ class Principal:
     @property
     def is_viewer(self) -> bool:
         return "viewer" in self.roles
+
+    @property
+    def is_support(self) -> bool:
+        return "support" in self.roles
+
+    @property
+    def sees_all_links(self) -> bool:
+        return self.is_admin or self.is_viewer or self.is_support
+
+    @property
+    def can_moderate(self) -> bool:
+        """Block, unblock and read moderation history on any link."""
+        return self.is_admin or self.is_support
 
 
 class Action(StrEnum):
@@ -71,18 +84,22 @@ def decide(principal: Principal, action: Action, link: LinkFacts | None = None) 
 
     facts = cast(LinkFacts, link)  # guaranteed by the check above
     owns = principal.is_editor and facts.owner_sub == principal.sub
+    sees = owns or principal.sees_all_links
     if action in (Action.READ, Action.STATS):
-        return Decision.ALLOW if owns or principal.is_viewer else Decision.NOT_FOUND
+        return Decision.ALLOW if sees else Decision.NOT_FOUND
     if action in (Action.UPDATE, Action.DELETE):
         if owns:
             return Decision.CONFLICT if facts.blocked else Decision.ALLOW
-        return Decision.FORBIDDEN if principal.is_viewer else Decision.NOT_FOUND
-    # Action.BLOCK, Action.AUDIT: admins only. Callers who can see the link get 403; others get 404.
-    return Decision.FORBIDDEN if owns or principal.is_viewer else Decision.NOT_FOUND
+        return Decision.FORBIDDEN if sees else Decision.NOT_FOUND
+    # Action.BLOCK, Action.AUDIT: moderators (admin, support). Callers who can see the link
+    # get 403; others get 404.
+    if principal.can_moderate:
+        return Decision.ALLOW
+    return Decision.FORBIDDEN if sees else Decision.NOT_FOUND
 
 
 def visible_owner(principal: Principal) -> str | None:
     """owner_sub filter for list/summary queries, or None when the caller may see every link."""
-    if principal.is_admin or principal.is_viewer:
+    if principal.sees_all_links:
         return None
     return principal.sub

@@ -91,4 +91,6 @@ and coverage `source`.
 
 - Keycloak port conflict: set `KEYCLOAK_HOST_PORT` and `KEYCLOAK_URL` in `.env`, then `make down && make up`.
 - Realm/Postgres role/Keycloak admin changes only apply on fresh volumes: `make down && make up`.
-- Seeded users (password `password`): alice=admin, eddie/erin=editor, victor=viewer, nora=no role.
+- Seeded users (password `password`): alice=admin, eddie/erin=editor, victor=viewer, sam=support, nora=no role.
+  Adding a role means updating `MANAGED_ROLES` in three places (`api` policy, `admin` sessions,
+  `keycloak_tools/users.py`) plus `infra/keycloak/realm-export.json`.

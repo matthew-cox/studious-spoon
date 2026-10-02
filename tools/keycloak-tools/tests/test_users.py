@@ -63,6 +63,7 @@ def test_repo_users_file_defines_the_demo_users():
         "eddie": frozenset({"editor"}),
         "erin": frozenset({"editor"}),
         "victor": frozenset({"viewer"}),
+        "sam": frozenset({"support"}),
         "nora": frozenset(),
     }
 

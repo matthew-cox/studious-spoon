@@ -210,3 +210,17 @@ async def test_page_order_is_details_and_edit_then_clicks_then_moderation(
     top = page[page.index('<div class="detail-grid">') : page.index("<h2>Clicks</h2>")]
     assert "<dt>Target</dt>" in top and "<h2>Edit</h2>" in top
     assert page.index("<h2>Clicks</h2>") < page.index("<h2>Moderation</h2>")
+
+
+async def test_support_moderates_but_cannot_edit_or_delete(client, mocks, ids, login_as):
+    session = await login_as("sam", ("support",))
+    admin_detail_routes(mocks, ids, EVENTS)
+    page = (await client.get(f"/links/{LID}")).text
+    assert f'action="/links/{LID}/block"' in page
+    assert "<h2>History</h2>" in page
+    assert "<h2>Edit</h2>" not in page and f'action="/links/{LID}/delete"' not in page
+    route = mocks.post(f"{ids['API']}/api/v1/links/{LID}/block").respond(json=LINK)
+    response = await client.post(
+        f"/links/{LID}/block", data={"csrf_token": session.csrf_token, "reason": "phishing"}
+    )
+    assert response.status_code == 303 and route.called

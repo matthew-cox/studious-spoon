@@ -76,3 +76,30 @@ def test_link_lifecycle(api, auth):
         ("block", "alice", "e2e abuse test"),
         ("delete", "alice", None),
     ]
+
+
+def test_support_moderates_but_cannot_change_links(api, auth):
+    link = api.post(
+        "/api/v1/links", json={"target_url": "https://example.com/report"}, headers=auth("eddie")
+    ).json()
+    url = f"/api/v1/links/{link['id']}"
+    sam = auth("sam")
+
+    assert api.get(url, headers=sam).status_code == 200
+    assert (
+        api.post("/api/v1/links", json={"target_url": "https://x.example"}, headers=sam).status_code
+        == 403
+    )
+    assert api.patch(url, json={"is_active": False}, headers=sam).status_code == 403
+    assert api.delete(url, headers=sam).status_code == 403
+
+    assert api.post(f"{url}/block", json={"reason": "phishing"}, headers=sam).status_code == 200
+    assert api.get(f"/{link['code']}").status_code == 410
+    assert api.post(f"{url}/unblock", headers=sam).status_code == 200
+    history = api.get(f"{url}/events", headers=sam).json()
+    assert [(e["action"], e["actor_username"]) for e in history] == [
+        ("block", "sam"),
+        ("unblock", "sam"),
+    ]
+
+    assert api.delete(url, headers=auth("eddie")).status_code == 204

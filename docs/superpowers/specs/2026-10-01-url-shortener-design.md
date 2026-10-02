@@ -195,10 +195,10 @@ The owner's switch and the admin block are deliberately separate (D6):
 - **Owner restrictions while blocked:**
   - `PATCH` (any field) → `409 Conflict`; the problem detail includes the block reason.
   - `DELETE` → `409 Conflict`, so the record is kept as evidence.
-- **Admins** can block, unblock, edit, and delete any link, blocked or not.
+- **Admins** can block, unblock, edit, and delete any link, blocked or not. **Support** can block and unblock any link, but never edit or delete one (§6.1).
 - **Unblocking** clears all three `blocked_*` columns. The link goes back to its previous `is_active` value.
-- **Moderation history:** every block, unblock and delete writes a row to `public.link_events` (link id and code, action, actor sub and username as of that moment, reason, time) in the same transaction as the change. There is no foreign key, so the history survives a deleted link. `api_user` has only `SELECT, INSERT` on it (append-only, migration 0003). `GET /api/v1/links/{id}/events` is admin-only (`Action.AUDIT`), and the admin UI shows it as a History section on the link page. Owners see the block reason on the link but never who blocked it.
-- **Admin UI:** a "Blocked" badge and the reason are shown to everyone who can see the link. Admins get block/unblock controls; blocking requires entering a reason.
+- **Moderation history:** every block, unblock and delete writes a row to `public.link_events` (link id and code, action, actor sub and username as of that moment, reason, time) in the same transaction as the change. There is no foreign key, so the history survives a deleted link. `api_user` has only `SELECT, INSERT` on it (append-only, migration 0003). `GET /api/v1/links/{id}/events` is for moderators only, admin and support (`Action.AUDIT`), and the admin UI shows it as a History section on the link page. Owners see the block reason on the link but never who blocked it.
+- **Admin UI:** a "Blocked" badge and the reason are shown to everyone who can see the link. Admins and support get block/unblock controls; blocking requires entering a reason.
 - **Future edge caching:** once redirects are cached in CloudFront, block, disable, update, and delete must also trigger a CloudFront invalidation for `/{code}` (§12).
 
 ### 4.4 Validation Rules
@@ -307,20 +307,22 @@ Base path for JSON endpoints: `/api/v1`. Errors are `application/problem+json` (
 
 Implemented as a pure function `can(principal, action, link) -> bool` (implemented as `decide(principal, action, link) -> Decision` with outcomes ALLOW/403/404/409, since the matrix has four outcomes) in `policy.py`. Routes call it; nothing else makes authorization decisions.
 
-| Action | admin | editor (own) | editor (other's) | viewer | no role |
-|---|---|---|---|---|---|
-| list / read / stats | ✅ | ✅ | ❌ (404) | ✅ | ❌ (403) |
-| create | ✅ | ✅ | — | ❌ (403) | ❌ (403) |
-| update / delete (not blocked) | ✅ | ✅ | ❌ (404) | ❌ (403) | ❌ (403) |
-| update / delete (blocked) | ✅ | ❌ (409) | ❌ (404) | ❌ (403) | ❌ (403) |
-| block / unblock | ✅ | ❌ (403) | ❌ (404) | ❌ (403) | ❌ (403) |
+| Action | admin | editor (own) | editor (other's) | viewer | support | no role |
+|---|---|---|---|---|---|---|
+| list / read / stats | ✅ | ✅ | ❌ (404) | ✅ | ✅ | ❌ (403) |
+| create | ✅ | ✅ | — | ❌ (403) | ❌ (403) | ❌ (403) |
+| update / delete (not blocked) | ✅ | ✅ | ❌ (404) | ❌ (403) | ❌ (403) | ❌ (403) |
+| update / delete (blocked) | ✅ | ❌ (409) | ❌ (404) | ❌ (403) | ❌ (403) | ❌ (403) |
+| block / unblock / moderation history | ✅ | ❌ (403) | ❌ (404) | ❌ (403) | ✅ | ❌ (403) |
+
+`support` is the role for the people who handle abuse reports: it sees every link and can block and unblock any of them (every action is recorded in the moderation history), but it never creates, edits or deletes. Delete stays with owners and admins because it is irreversible and destroys click history. Roles combine: an editor who is also support edits only their own links but can moderate any.
 
 Missing or invalid token → `401`.
 
 ## 7. Authentication & Keycloak
 
 ### 7.1 Realm `shortener`
-- Realm roles: `admin`, `editor`, `viewer`, emitted in the access token under `realm_access.roles`.
+- Realm roles: `admin`, `editor`, `viewer`, `support`, emitted in the access token under `realm_access.roles`.
 - Clients:
 
 | Client | Type | Config |
@@ -354,6 +356,7 @@ The browser reaches Keycloak at `http://localhost:8080`, but containers reach it
 | `eddie` | editor | Owns links |
 | `erin` | editor | Cannot see eddie's links |
 | `victor` | viewer | Read-only across all links |
+| `sam` | support | Handles abuse reports: block/unblock any link, no create/edit/delete |
 | `nora` | (none) | `403` / "no access" page |
 
 ## 8. Admin UI
@@ -490,7 +493,7 @@ Written test-first (TDD).
 | Integration (api) | Every endpoint, redirects publish events, stats read from rollups, block rules | `pytest` + `httpx.AsyncClient` (ASGI transport) against real Postgres via **testcontainers**; `InMemoryClickPublisher`. Auth: the test fixture generates an RSA keypair, overrides the JWKS provider, and mints tokens with any roles. |
 | Integration (processor) | Consume → rollups → delete; invalid messages → DLQ; unknown links; transaction failure leaves messages on the queue | testcontainers for Postgres **and ElasticMQ** (generic container with the same `elasticmq.conf`) |
 | Integration (admin) | Routes, session store, refresh, CSRF, HTMX fragments | API mocked with `respx`; real Postgres for `admin.sessions`; OIDC callback stubbed. |
-| E2E smoke | The full compose stack | `make e2e` (pytest, `-m e2e`): real tokens via `shortener-dev` for seeded users. Observability scenarios: the Shortener Overview dashboard is provisioned, the HTTP and custom metrics reach Prometheus, the cross-SQS trace link (processor batch span linked to the API producer span) is found in Tempo, and a log line in stdout correlates with its trace through the Loki `trace_id`. Redirect scenario: eddie creates a link → erin gets `404` on it → following it returns `302` → **poll stats until total = 1 (timeout 15 s)** → alice blocks it → eddie's `PATCH` gets `409` → the redirect returns `410` and stats total stays 1 → victor can read it but gets `403` on create → nora gets `403`. |
+| E2E smoke | The full compose stack | `make e2e` (pytest, `-m e2e`): real tokens via `shortener-dev` for seeded users. Observability scenarios: the Shortener Overview dashboard is provisioned, the HTTP and custom metrics reach Prometheus, the cross-SQS trace link (processor batch span linked to the API producer span) is found in Tempo, and a log line in stdout correlates with its trace through the Loki `trace_id`. Redirect scenario: eddie creates a link → erin gets `404` on it → following it returns `302` → **poll stats until total = 1 (timeout 15 s)** → alice blocks it → eddie's `PATCH` gets `409` → the redirect returns `410` and stats total stays 1 → victor can read it but gets `403` on create → nora gets `403`. Support scenario: sam gets `403` on create, edit and delete, blocks a link (redirect `410`), unblocks it, and the moderation history names sam for both. |
 
 **CI (GitHub Actions):** the quality gates in §15.2 (`ruff check`, `ruff format --check`, `mypy --strict`, coverage thresholds), unit + integration tests for all packages, and Docker image builds. An `e2e` job brings up the full stack with `make up` and runs `make e2e`; compose logs are uploaded on failure.
 

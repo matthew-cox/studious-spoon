@@ -70,7 +70,7 @@ class LinkOut(BaseModel):
 
 
 class LinkEventOut(BaseModel):
-    """A moderation action on a link. Admin-only: it names the admin who acted."""
+    """A moderation action on a link. Moderators only: it names who acted."""
 
     id: int
     link_id: UUID

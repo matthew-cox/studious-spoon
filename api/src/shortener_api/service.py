@@ -165,12 +165,12 @@ class LinkService:
         return unblocked
 
     async def events(self, principal: Principal, link_id: UUID) -> Sequence[LinkEvent]:
-        """Moderation history, admins only. Admins can still read it after the link is deleted."""
+        """Moderation history for moderators, readable even after the link is deleted."""
         link = await self._repo.get(link_id)
         if link is not None:
             enforce(decide(principal, Action.AUDIT, link.facts()), link)
             return await self._repo.events(link_id)
-        events = await self._repo.events(link_id) if principal.is_admin else []
+        events = await self._repo.events(link_id) if principal.can_moderate else []
         if not events:
             raise _not_found()
         return events

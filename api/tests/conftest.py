@@ -24,6 +24,7 @@ USERS: dict[str, tuple[str, tuple[str, ...]]] = {
     "eddie": ("sub-eddie", ("editor",)),
     "erin": ("sub-erin", ("editor",)),
     "victor": ("sub-victor", ("viewer",)),
+    "sam": ("sub-sam", ("support",)),
     "nora": ("sub-nora", ("default-roles-shortener",)),
 }
 

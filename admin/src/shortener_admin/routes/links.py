@@ -103,7 +103,7 @@ async def _stats(
 
 
 async def _history(deps: AdminDeps, session: Session, link_id: str) -> list[Any] | None:
-    """Moderation history for admins (the API refuses everyone else); None if unavailable."""
+    """Moderation history for moderators (the API refuses everyone else); None if unavailable."""
     try:
         events: list[Any] = await deps.api.link_events(session.tokens.access_token, link_id)
     except ApiError as exc:
@@ -132,7 +132,7 @@ async def _detail(
 ) -> HTMLResponse:  # fmt: skip
     link = await deps.api.get_link(session.tokens.access_token, link_id)
     stats = await _stats(deps, session, link_id, bucket)
-    history = await _history(deps, session, link_id) if session.is_admin else None
+    history = await _history(deps, session, link_id) if session.can_moderate else None
     owner_summary = await _owner_summary(deps, session, link["owner_username"])
     return render(
         request,
@@ -142,7 +142,7 @@ async def _detail(
         notice=notice,
         error=api_message(error) if error else None,
         can_edit=_can_edit(session, link),
-        can_block=session.is_admin,
+        can_block=session.can_moderate,
         history=history,
         owner_summary=owner_summary,
         stats=stats,

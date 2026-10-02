@@ -114,5 +114,5 @@ async def unblock_link(
 async def link_events(
     link_id: UUID, principal: CurrentPrincipal, service: Service
 ) -> list[LinkEventOut]:
-    """Moderation history (block, unblock, delete), oldest first. Admins only."""
+    """Moderation history (block, unblock, delete), oldest first. Admin and support only."""
     return [LinkEventOut.of(e) for e in await service.events(principal, link_id)]

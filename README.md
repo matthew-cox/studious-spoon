@@ -79,7 +79,7 @@ The click-processor rolls clicks into `analytics.*` within a second or two; `GET
 
 ## Admin UI
 
-- Sign in at http://localhost:8001 as `alice` (admin), `eddie`/`erin` (editor), `victor` (viewer) or `nora` (no access).
+- Sign in at http://localhost:8001 as `alice` (admin), `eddie`/`erin` (editor), `victor` (viewer), `sam` (support) or `nora` (no access).
 - Every action goes through the API with your own token, so what you can do is exactly what the API allows.
 - Sessions are server-side in `admin.sessions`; the browser only holds an opaque `sid`.
 - Admins get an **Observability ↗** link in the nav that opens the Grafana dashboard (`OBSERVABILITY_URL`).
@@ -101,6 +101,7 @@ The click-processor rolls clicks into `analytics.*` within a second or two; `GET
 | alice | admin |
 | eddie, erin | editor |
 | victor | viewer |
+| sam | support (block/unblock any link; no create, edit or delete) |
 | nora | (none) |
 
 Edit `infra/keycloak/users.yaml` and run `make seed-users` (inside compose) or `scripts/seed-users`

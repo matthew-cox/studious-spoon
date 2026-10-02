@@ -37,7 +37,7 @@ def test_issuer_is_the_browser_facing_url(e2e_settings):
 
 def test_realm_roles_exist(admin_http):
     names = {r["name"] for r in admin_http.get("/roles").raise_for_status().json()}
-    assert {"admin", "editor", "viewer"} <= names
+    assert {"admin", "editor", "viewer", "support"} <= names
 
 
 def test_admin_client_is_confidential_with_pkce(admin_http):
