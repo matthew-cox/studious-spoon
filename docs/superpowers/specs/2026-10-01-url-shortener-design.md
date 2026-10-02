@@ -454,8 +454,7 @@ Not built in this iteration; the design leaves room for each.
 11. **Domain blocklist:** target domains checked on create/update; blocked domains rejected with `422`.
 12. **Block appeals:** an owner-initiated appeal workflow for blocked links.
 13. **Keycloak via Terraform:** manage the realm, clients, and roles with the Keycloak Terraform provider instead of a JSON import.
-14. **Playwright UI tests** and **e2e tests in CI.**
-15. **Rollup compaction and retention, then an analytics store if needed:**
+14. **Rollup compaction and retention, then an analytics store if needed:**
     - **Step 1 (no new infrastructure):** a `pg_cron` job (supported on RDS) that folds `link_clicks_hourly` rows older than N days into a new `link_clicks_daily` table and prunes referrer rows past a retention window. The stats API reads hourly data for recent ranges and daily data for older ones.
     - **Step 2 (only if raw clicks must be queryable with low latency**, e.g. slicing by user agent or referrer path over any range): add a dedicated analytics store as a new `RollupStore`/query backend, fed by the same SQS events.
       - **ClickHouse** is preferred: materialized views roll up automatically, and it stores raw events efficiently. On AWS it would be ClickHouse Cloud.
