@@ -188,3 +188,22 @@ async def test_history_failure_does_not_break_the_page(client, mocks, ids, login
     response = await client.get(f"/links/{LID}")
     assert response.status_code == 200
     assert "History unavailable." in history_section(response.text)
+
+
+async def test_chart_and_referrers_share_one_row(client, mocks, ids, login_as):
+    await login_as()
+    detail_routes(mocks, ids)
+    page = (await client.get(f"/links/{LID}")).text
+    grid = page[page.index('<div class="stats-grid">') :]
+    assert grid.index("<canvas") < grid.index("Top referrers") < grid.index("</div>\n</div>")
+
+
+async def test_page_order_is_details_and_edit_then_clicks_then_moderation(
+    client, mocks, ids, login_as
+):
+    await login_as("alice", ("admin",))
+    admin_detail_routes(mocks, ids)
+    page = (await client.get(f"/links/{LID}")).text
+    top = page[page.index('<div class="detail-grid">') : page.index("<h2>Clicks</h2>")]
+    assert "<dt>Target</dt>" in top and "<h2>Edit</h2>" in top
+    assert page.index("<h2>Clicks</h2>") < page.index("<h2>Moderation</h2>")

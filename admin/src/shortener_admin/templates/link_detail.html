@@ -11,13 +11,13 @@
 {% if link.status == "blocked" %}
 <article><strong>Blocked by an administrator.</strong> Reason: {{ link.blocked_reason }}</article>
 {% endif %}
+<div class="detail-grid">
 <dl>
   <dt>Target</dt><dd class="target">{{ link.target_url }}</dd>
   <dt>Owner</dt><dd>{{ link.owner_username }}</dd>
   <dt>Created</dt><dd>{{ link.created_at | as_of }}</dd>
   <dt>Updated</dt><dd>{{ link.updated_at | as_of }}</dd>
 </dl>
-
 {% if can_edit %}
 <section>
   <h2>Edit</h2>
@@ -41,6 +41,15 @@
   </details>
 </section>
 {% endif %}
+</div>
+
+{% if stats %}
+<section>
+  <h2>Clicks</h2>
+  {% include "partials/link_stats.html" %}
+</section>
+{% endif %}
+
 
 {% if can_block %}
 <section>
@@ -82,13 +91,6 @@
     </tbody>
   </table>
   {% endif %}
-</section>
-{% endif %}
-
-{% if stats %}
-<section>
-  <h2>Clicks</h2>
-  {% include "partials/link_stats.html" %}
 </section>
 {% endif %}
 {% endblock %}
