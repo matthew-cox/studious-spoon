@@ -1,34 +1,35 @@
 # Terraform for AWS: handoff (read this first)
 
 - **Status (2026-10-02):** design and plan approved and committed. **No implementation yet.** The `terraform/` directory doesn't exist.
-- **Why this file exists:** resuming should cost as few tokens as possible. Read this file, then *one task at a time* from the plan. Don't load the whole 3,500-line plan.
+- **Why this file exists:** resuming should cost as few tokens as possible. Read this file, then *one task at a time* from the plan. Don't load the whole 3,800-line plan.
 
 ## Where things are
 
 | What | Path | Size |
 |---|---|---|
+| One-page ops answer (diagram, state, monitoring) | `docs/operations.md` | ~1 page |
 | Decisions (ADR) | `docs/adr/0001-terraform-aws-plan-ready.md` | ~40 lines |
-| Design spec (binding) | `docs/superpowers/specs/2026-10-02-terraform-aws-design.md` | 254 lines |
-| Implementation plan | `docs/superpowers/plans/2026-10-02-terraform-aws.md` | ~3,500 lines |
+| Design spec (binding) | `docs/superpowers/specs/2026-10-02-terraform-aws-design.md` | 264 lines |
+| Implementation plan | `docs/superpowers/plans/2026-10-02-terraform-aws.md` | 3,840 lines |
 | Parent spec (§11 AWS mapping) | `docs/superpowers/specs/2026-10-01-url-shortener-design.md` | — |
 
 Plan sections, by line (`sed -n 'A,Bp'` or Read with an offset):
 
 | Lines | Section |
 |---|---|
-| 1–128 | Header, Global Constraints, Review Focus, file map, shared `versions.tf` and test header |
-| 129 | T1 tooling + `make tf-check` + CI + `queue` |
-| 392 | T2 `secrets` |
-| 598 | T3 `data` (RDS) |
-| 790 | T4 `ecr` |
-| 900 | T5 `edge` |
-| 1142 | T6 `service` (largest) |
-| 1822 | T7 `task` + `db-bootstrap.sh` + pytest |
-| 2130 | T8 `alarms` |
-| 2378 | T9 `ci-deploy-role` |
-| 2584 | T10 `stack` + envs + shared mocks |
-| 3296 | T11 Keycloak image + realm placeholder |
-| 3417 | T12 docs + state guard |
+| 1–130 | Header, Global Constraints, Review Focus, file map, shared `versions.tf` and test header |
+| 131 | T1 tooling + `make tf-check` + CI + `queue` |
+| 394 | T2 `secrets` |
+| 600 | T3 `data` (RDS) |
+| 792 | T4 `ecr` |
+| 902 | T5 `edge` |
+| 1144 | T6 `service` (largest) |
+| 1824 | T7 `task` + `db-bootstrap.sh` + pytest |
+| 2132 | T8 `alarms` + redirect canary |
+| 2686 | T9 `ci-deploy-role` |
+| 2892 | T10 `stack` + envs + shared mocks + backend.hcl |
+| 3629 | T11 Keycloak image + realm placeholder |
+| 3750 | T12 docs + state guard |
 
 ## How to resume (cheapest path)
 
@@ -46,6 +47,7 @@ Plan sections, by line (`sed -n 'A,Bp'` or Read with an offset):
 - **Ephemeral values in write-only arguments:** ephemeral `random_password` inside `jsonencode()` in `secret_string_wo` must pass `terraform validate` (Terraform ≥ 1.11, AWS provider ≥ 6).
 - **The bootstrap grant:** PG16 must accept `GRANT migrator, keycloak TO CURRENT_USER WITH INHERIT TRUE, SET TRUE`. Task 7 has a fallback.
 - **Keycloak import placeholders:** Keycloak must resolve `${ADMIN_PUBLIC_BASE_URL}` in realm import, as it already does for `${SHORTENER_ADMIN_CLIENT_SECRET}`.
+- **The Synthetics Python runtime name:** `canary_runtime_version` defaults to `syn-python-selenium-6.0`; check the AWS Synthetics runtime list for the current one.
 - **Trivy findings:** findings at the plan's severity threshold must be fixed or ignored inline with a reason; never lower the threshold.
 
 ## User constraints (keep)

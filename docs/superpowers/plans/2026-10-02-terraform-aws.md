@@ -35,7 +35,7 @@
 - **Version pins:**
   - `.terraform-version` contains `1.16.5`.
   - Every root and module sets `required_version = "~> 1.16"`.
-  - `hashicorp/aws ~> 6.67` and `hashicorp/random ~> 3.9`.
+  - `hashicorp/aws ~> 6.67`, `hashicorp/random ~> 3.9` and `hashicorp/archive ~> 2.8` (archive zips the canary script).
 - **Modules never configure providers;** only the environment roots do (`provider "aws"` with `default_tags`).
 - **Tests:**
   - Each module has `tests/*.tftest.hcl` beside it. Tests use `mock_provider "aws"` and the real `random` provider, and `command = apply`, so that mocked computed values are known.
@@ -45,6 +45,7 @@
   - `Resource = "*"` is allowed **only** for actions with no resource-level permissions:
     - `xray:PutTraceSegments`, `xray:PutTelemetryRecords`, `xray:GetSamplingRules`, `xray:GetSamplingTargets` (task roles)
     - `ecr:GetAuthorizationToken`, `ecs:RegisterTaskDefinition`, `ecs:DescribeTaskDefinition` (deploy role)
+    - `s3:ListAllMyBuckets`, and `cloudwatch:PutMetricData` with a `cloudwatch:namespace = CloudWatchSynthetics` condition (canary role; Synthetics requires both)
     
     No `Action` ever contains `*`.
 
@@ -106,7 +107,8 @@ terraform {
   required_version = "~> 1.16"
   required_providers {
     aws    = { source = "hashicorp/aws", version = "~> 6.67" }
-    random = { source = "hashicorp/random", version = "~> 3.9" }
+    random  = { source = "hashicorp/random", version = "~> 3.9" }
+    archive = { source = "hashicorp/archive", version = "~> 2.8" }
   }
 }
 ```
@@ -2127,10 +2129,11 @@ Co-Authored-By: <implementing model> <noreply@anthropic.com>"
 
 ---
 
-### Task 8: `alarms` module (SNS + the six alarms)
+### Task 8: `alarms` module (SNS, the alarms, and the redirect canary)
 
 **Files:**
-- Create: `terraform/modules/alarms/{versions.tf,variables.tf,main.tf,outputs.tf}`, `terraform/modules/alarms/tests/alarms.tftest.hcl`
+- Create: `terraform/modules/alarms/{versions.tf,variables.tf,main.tf,canary.tf,outputs.tf}`, `terraform/modules/alarms/canary/canary.py`, `terraform/modules/alarms/tests/alarms.tftest.hcl`, `tests/test_redirect_canary.py`
+- Modify: `.gitignore` (add `terraform/**/.build/`, where the canary zip is written)
 
 **Interfaces:**
 - Consumes:
@@ -2145,20 +2148,35 @@ Co-Authored-By: <implementing model> <noreply@anthropic.com>"
     - `alb_arn_suffix`, `target_group_arn_suffixes` (`map(string)` with static keys)
     - `db_instance_identifier`, `ecs_cluster_name`, `processor_service_name`
     - `error_rate_percent` (number, default 2), `min_requests` (number, default 50), `db_free_storage_bytes` (number, default 2147483648)
+    - `canary_url` (string, nullable, default null; null disables the canary): the full URL of the canary short link, e.g. `https://go.<domain>/canary`
+    - `canary_runtime_version` (string, default `"syn-python-selenium-6.0"`; check the AWS Synthetics runtime list for the current Python runtime when implementing)
     - `tags`
-  - **Outputs:** `topic_arn`, `alarm_names` (list(string)).
+  - **Outputs:** `topic_arn`, `alarm_names` (list(string)), `canary_name` (string or null).
 
 - [ ] **Step 1: Write the failing test**
 
 `terraform/modules/alarms/tests/alarms.tftest.hcl`:
 ```hcl
 mock_provider "aws" {
+  mock_data "aws_region" {
+    defaults = { region = "us-east-1", name = "us-east-1" }
+  }
+  mock_data "aws_caller_identity" {
+    defaults = { account_id = "123456789012" }
+  }
   mock_resource "aws_sns_topic" {
     defaults = { arn = "arn:aws:sns:us-east-1:123456789012:mock" }
+  }
+  mock_resource "aws_s3_bucket" {
+    defaults = { arn = "arn:aws:s3:::shortener-test-canary-abc", id = "shortener-test-canary-abc" }
+  }
+  mock_resource "aws_iam_role" {
+    defaults = { arn = "arn:aws:iam::123456789012:role/mock" }
   }
 }
 
 variables {
+  canary_url                = "https://go.example.test/canary"
   name_prefix               = "shortener-test"
   queue_name                = "shortener-test-click-events"
   dlq_name                  = "shortener-test-click-events-dlq"
@@ -2189,6 +2207,10 @@ run "alarm_set" {
     error_message = "5xx rate only counts when requests >= min_requests (quiet nights don't page)"
   }
   assert {
+    condition = toset([for q in aws_cloudwatch_metric_alarm.error_rate.metric_query : q.metric[0].metric_name if length(q.metric) > 0]) == toset(["HTTPCode_Target_5XX_Count", "HTTPCode_ELB_5XX_Count", "RequestCount"])
+    error_message = "error rate counts target 5xx AND the ALB's own 5xx (502/503 when no target is healthy)"
+  }
+  assert {
     condition     = length(aws_cloudwatch_metric_alarm.unhealthy_targets) == 3
     error_message = "an unhealthy-targets alarm per target group"
   }
@@ -2202,6 +2224,42 @@ run "alarm_set" {
       a.alarm_actions == toset(["arn:aws:sns:us-east-1:123456789012:mock"])
     ])
     error_message = "every alarm notifies the SNS topic"
+  }
+}
+
+run "redirect_canary" {
+  command = apply
+
+  assert {
+    condition     = aws_synthetics_canary.redirect[0].schedule[0].expression == "rate(1 minute)" && aws_synthetics_canary.redirect[0].run_config[0].environment_variables == { CANARY_URL = "https://go.example.test/canary" }
+    error_message = "the canary probes the canary link every minute"
+  }
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.canary[0].metric_name == "SuccessPercent" && aws_cloudwatch_metric_alarm.canary[0].evaluation_periods == 2 && aws_cloudwatch_metric_alarm.canary[0].treat_missing_data == "breaching"
+    error_message = "two failed canary runs page; a canary that stops reporting also pages"
+  }
+  assert {
+    condition     = aws_s3_bucket_public_access_block.canary[0].block_public_acls && aws_s3_bucket_public_access_block.canary[0].restrict_public_buckets
+    error_message = "canary artifacts bucket is private"
+  }
+  assert {
+    condition = alltrue([
+      for st in jsondecode(aws_iam_role_policy.canary[0].policy).Statement :
+      st.Resource != "*" || toset(flatten([st.Action])) == toset(["s3:ListAllMyBuckets"]) || toset(flatten([st.Action])) == toset(["cloudwatch:PutMetricData"])
+    ])
+    error_message = "canary role: Resource \"*\" only where Synthetics requires it"
+  }
+}
+
+run "canary_disabled" {
+  command = apply
+  variables {
+    canary_url = null
+  }
+
+  assert {
+    condition     = length(aws_synthetics_canary.redirect) == 0 && length(aws_cloudwatch_metric_alarm.canary) == 0 && length(aws_s3_bucket.canary) == 0
+    error_message = "no canary_url, no canary resources"
   }
 }
 ```
@@ -2268,15 +2326,25 @@ resource "aws_cloudwatch_metric_alarm" "error_rate" {
 
   metric_query {
     id          = "rate"
-    expression  = "IF(requests >= ${var.min_requests}, 100 * errors / requests, 0)"
+    expression  = "IF(requests >= ${var.min_requests}, 100 * (target_errors + elb_errors) / requests, 0)"
     label       = "5xx percent"
     return_data = true
   }
   metric_query {
-    id = "errors"
+    id = "target_errors"
     metric {
       namespace   = "AWS/ApplicationELB"
       metric_name = "HTTPCode_Target_5XX_Count"
+      dimensions  = { LoadBalancer = var.alb_arn_suffix }
+      stat        = "Sum"
+      period      = 300
+    }
+  }
+  metric_query {
+    id = "elb_errors" # the ALB's own 502/503/504: what visitors see when no target is healthy
+    metric {
+      namespace   = "AWS/ApplicationELB"
+      metric_name = "HTTPCode_ELB_5XX_Count"
       dimensions  = { LoadBalancer = var.alb_arn_suffix }
       stat        = "Sum"
       period      = 300
@@ -2357,19 +2425,259 @@ resource "aws_cloudwatch_metric_alarm" "processor_down" {
   tags                = var.tags
 }
 ```
+`canary/canary.py` (Python Synthetics runtime; standard library only):
+```python
+"""Redirect canary: HEAD the canary short link without following redirects; pass only on 302.
+
+HEAD returns the same status as GET but records no click, so the canary never pollutes stats.
+"""
+
+import os
+import urllib.error
+import urllib.request
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        return None
+
+
+def check(url: str, timeout: float = 10.0) -> int:
+    request = urllib.request.Request(url, method="HEAD")  # noqa: S310 (fixed https URL from config)
+    try:
+        with urllib.request.build_opener(_NoRedirect).open(request, timeout=timeout) as response:
+            return int(response.status)
+    except urllib.error.HTTPError as error:
+        return error.code
+
+
+def handler(event, context):  # noqa: ANN001, ARG001 (Synthetics entrypoint)
+    url = os.environ["CANARY_URL"]
+    status = check(url)
+    if status != 302:
+        raise RuntimeError(f"redirect canary: expected 302 from {url}, got {status}")
+    return "ok"
+```
+
+`canary.tf`:
+```hcl
+data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
+
+locals {
+  canary = var.canary_url == null ? 0 : 1
+}
+
+resource "aws_s3_bucket" "canary" {
+  count         = local.canary
+  bucket_prefix = "${var.name_prefix}-canary-"
+  force_destroy = true
+  tags          = var.tags
+}
+
+resource "aws_s3_bucket_public_access_block" "canary" {
+  count                   = local.canary
+  bucket                  = aws_s3_bucket.canary[0].id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "canary" {
+  count  = local.canary
+  bucket = aws_s3_bucket.canary[0].id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+
+resource "aws_s3_bucket_versioning" "canary" {
+  count  = local.canary
+  bucket = aws_s3_bucket.canary[0].id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "canary" {
+  count  = local.canary
+  bucket = aws_s3_bucket.canary[0].id
+  rule {
+    id     = "expire-artifacts"
+    status = "Enabled"
+    filter {}
+    expiration {
+      days = 14
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 1
+    }
+  }
+}
+
+data "archive_file" "canary" {
+  count       = local.canary
+  type        = "zip"
+  output_path = "${path.module}/.build/canary.zip"
+  source {
+    content  = file("${path.module}/canary/canary.py")
+    filename = "python/canary.py"
+  }
+}
+
+resource "aws_iam_role" "canary" {
+  count = local.canary
+  name  = "${var.name_prefix}-canary"
+  assume_role_policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = [{ Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" }, Action = "sts:AssumeRole" }]
+  })
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy" "canary" {
+  count = local.canary
+  name  = "synthetics"
+  role  = aws_iam_role.canary[0].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      { Effect = "Allow", Action = ["s3:PutObject", "s3:GetBucketLocation"], Resource = [aws_s3_bucket.canary[0].arn, "${aws_s3_bucket.canary[0].arn}/*"] },
+      { Effect = "Allow", Action = ["s3:ListAllMyBuckets"], Resource = "*" },
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = ["arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/cwsyn-*"]
+      },
+      {
+        Effect    = "Allow"
+        Action    = ["cloudwatch:PutMetricData"]
+        Resource  = "*"
+        Condition = { StringEquals = { "cloudwatch:namespace" = "CloudWatchSynthetics" } }
+      },
+    ]
+  })
+}
+
+resource "aws_synthetics_canary" "redirect" {
+  count                    = local.canary
+  name                     = substr(replace("${var.name_prefix}-redirect", "shortener-", ""), 0, 21) # e.g. prod-redirect
+  artifact_s3_location     = "s3://${aws_s3_bucket.canary[0].id}/"
+  execution_role_arn       = aws_iam_role.canary[0].arn
+  handler                  = "canary.handler"
+  zip_file                 = data.archive_file.canary[0].output_path
+  runtime_version          = var.canary_runtime_version
+  start_canary             = true
+  success_retention_period = 7
+  failure_retention_period = 14
+
+  schedule {
+    expression = "rate(1 minute)"
+  }
+  run_config {
+    timeout_in_seconds    = 30
+    environment_variables = { CANARY_URL = var.canary_url }
+  }
+  tags = var.tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "canary" {
+  count               = local.canary
+  alarm_name          = "${var.name_prefix}-redirect-canary"
+  alarm_description   = "Redirects fail from the outside (DNS, TLS, ALB, api, or the link lookup)"
+  namespace           = "CloudWatchSynthetics"
+  metric_name         = "SuccessPercent"
+  dimensions          = { CanaryName = aws_synthetics_canary.redirect[0].name }
+  statistic           = "Average"
+  period              = 60
+  evaluation_periods  = 2
+  threshold           = 100
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+  alarm_actions       = local.actions
+  tags                = var.tags
+}
+```
+
+`tests/test_redirect_canary.py` (runs the real canary function against a local HTTP server; no AWS):
+```python
+"""terraform/modules/alarms/canary/canary.py: passes only on 302, never follows the redirect."""
+
+import importlib.util
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+import pytest
+
+SPEC = importlib.util.spec_from_file_location(
+    "canary", Path(__file__).resolve().parents[1] / "terraform/modules/alarms/canary/canary.py"
+)
+canary = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(canary)
+
+
+@pytest.fixture
+def server():
+    seen: list[str] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_HEAD(self) -> None:
+            seen.append(self.path)
+            status = {"/canary": 302, "/gone": 410}.get(self.path, 404)
+            self.send_response(status)
+            if status == 302:
+                self.send_header("Location", "http://127.0.0.1:9/never-followed")
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    httpd = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}", seen
+    httpd.shutdown()
+    httpd.server_close()
+
+
+def test_passes_on_302_without_following(server, monkeypatch):
+    base, seen = server
+    monkeypatch.setenv("CANARY_URL", f"{base}/canary")
+    assert canary.handler({}, None) == "ok"
+    assert seen == ["/canary"]  # HEAD only, the Location was never requested
+
+
+@pytest.mark.parametrize(("path", "status"), [("/missing", 404), ("/gone", 410)])
+def test_fails_on_anything_but_302(server, monkeypatch, path, status):
+    base, _ = server
+    monkeypatch.setenv("CANARY_URL", f"{base}{path}")
+    with pytest.raises(RuntimeError, match=f"got {status}"):
+        canary.handler({}, None)
+
+
+def test_fails_when_unreachable(monkeypatch):
+    monkeypatch.setenv("CANARY_URL", "http://127.0.0.1:9/canary")
+    with pytest.raises(OSError):
+        canary.handler({}, None)
+```
+
 Write `variables.tf` from Interfaces. `outputs.tf`:
+- `canary_name`: `one(aws_synthetics_canary.redirect[*].name)`
 - `topic_arn`: `aws_sns_topic.alarms.arn`
-- `alarm_names`: `concat([aws_cloudwatch_metric_alarm.dlq_not_empty.alarm_name, aws_cloudwatch_metric_alarm.backlog_stale.alarm_name, aws_cloudwatch_metric_alarm.error_rate.alarm_name, aws_cloudwatch_metric_alarm.db_cpu.alarm_name, aws_cloudwatch_metric_alarm.db_storage.alarm_name, aws_cloudwatch_metric_alarm.processor_down.alarm_name], [for a in aws_cloudwatch_metric_alarm.unhealthy_targets : a.alarm_name])`
+- `alarm_names`: `concat([aws_cloudwatch_metric_alarm.dlq_not_empty.alarm_name, aws_cloudwatch_metric_alarm.backlog_stale.alarm_name, aws_cloudwatch_metric_alarm.error_rate.alarm_name, aws_cloudwatch_metric_alarm.db_cpu.alarm_name, aws_cloudwatch_metric_alarm.db_storage.alarm_name, aws_cloudwatch_metric_alarm.processor_down.alarm_name], [for a in aws_cloudwatch_metric_alarm.unhealthy_targets : a.alarm_name], aws_cloudwatch_metric_alarm.canary[*].alarm_name)`
 
 - [ ] **Step 4: Run the tests**
 
-Run: `terraform -chdir=terraform/modules/alarms test`
-Expected: `1 passed, 0 failed`.
+Run: `terraform -chdir=terraform/modules/alarms test && uv run pytest tests/test_redirect_canary.py -q`
+Expected: `3 passed, 0 failed` (Terraform), then `4 passed` (pytest). Add `terraform/**/.build/` to `.gitignore`.
 
 - [ ] **Step 5: Gate and commit**
 
 ```bash
-make tf-check && /usr/bin/git add terraform/modules/alarms && /usr/bin/git commit -m "feat(terraform): alarms module (SNS topic + DLQ, backlog, 5xx rate, unhealthy targets, RDS, processor-down)
+uv run ruff format . && make check && make tf-check && /usr/bin/git add terraform/modules/alarms tests/test_redirect_canary.py .gitignore && /usr/bin/git commit -m "feat(terraform): alarms module (SNS; DLQ, backlog, ALB+target 5xx rate, unhealthy targets, RDS, processor-down) and a redirect canary
 
 Co-Authored-By: <implementing model> <noreply@anthropic.com>"
 ```
@@ -2587,7 +2895,7 @@ Co-Authored-By: <implementing model> <noreply@anthropic.com>"
 - Create:
   - the module: `terraform/modules/stack/{versions.tf,variables.tf,main.tf,services.tf,outputs.tf}`, `terraform/modules/stack/tests/stack.tftest.hcl`
   - shared test fixtures: `terraform/testing/aws/aws.tfmock.hcl`
-  - each root: `terraform/envs/{staging,prod}/{versions.tf,providers.tf,backend.tf,variables.tf,main.tf,outputs.tf,terraform.tfvars.example,.terraform.lock.hcl}` and `terraform/envs/{staging,prod}/tests/<env>.tftest.hcl`
+  - each root: `terraform/envs/{staging,prod}/{versions.tf,providers.tf,backend.tf,backend.hcl.example,variables.tf,main.tf,outputs.tf,terraform.tfvars.example,.terraform.lock.hcl}` and `terraform/envs/{staging,prod}/tests/<env>.tftest.hcl`
 - Modify:
   - `terraform/modules/data/outputs.tf`: add `multi_az` and `deletion_protection`, read from `aws_db_instance.this`
   - `terraform/modules/service/outputs.tf`: add `container_stop_timeout = jsondecode(aws_ecs_task_definition.this.container_definitions)[0].stopTimeout` and `scaling = one([for t in aws_appautoscaling_target.this : { min = t.min_capacity, max = t.max_capacity }])`
@@ -2600,9 +2908,10 @@ Co-Authored-By: <implementing model> <noreply@anthropic.com>"
     - `domain`, `route53_zone_id`, `vpc_id`, `private_subnet_ids`, `public_subnet_ids`, `ecs_cluster_arn`
     - `github_repository`, `github_oidc_provider_arn` (default null), `admin_cidrs` (default `[]`)
     - `image_tag`
+    - `canary_link_code` (string, required): the generated short code of the dedicated canary link. The API always generates codes, so the link is created once per environment and its code is set here (runbook in Task 12).
     - `sizes` (object below)
   - **Outputs:**
-    - `hostnames`, `alb_dns_name`, `ecr_repository_urls`, `deploy_role_arn`, `alarm_topic_arn`
+    - `hostnames`, `alb_dns_name`, `ecr_repository_urls`, `deploy_role_arn`, `alarm_topic_arn`, `canary_name`
     - `one_off_tasks`: a map of `{ family, security_group_id }` for `db_bootstrap` and `migrate`
     - `private_subnet_ids`
     - `service_config`: per service, the env-var names and values and the secret env-var names with their secret ARNs. These are ARNs only, never values. It's useful for review and for tests.
@@ -2716,6 +3025,7 @@ variables {
   github_repository  = "example/shortener"
   admin_cidrs        = ["203.0.113.0/24"]
   image_tag          = "abc123"
+  canary_link_code   = "aZ3kQ9x"
   sizes = {
     db_instance_class        = "db.t4g.micro"
     db_multi_az              = false
@@ -2763,6 +3073,10 @@ run "wiring" {
   assert {
     condition     = toset(keys(output.one_off_tasks)) == toset(["db_bootstrap", "migrate"])
     error_message = "the pipeline needs both one-off task families and their security groups"
+  }
+  assert {
+    condition     = output.canary_name != null
+    error_message = "every environment gets the outside-in redirect canary"
   }
 }
 ```
@@ -2873,6 +3187,7 @@ module "alarms" {
   db_instance_identifier = module.data.instance_identifier
   ecs_cluster_name       = local.cluster_name
   processor_service_name = module.processor.service_name
+  canary_url             = "https://${module.edge.hostnames.api}/${var.canary_link_code}"
   target_group_arn_suffixes = {
     api      = module.api.target_group_arn_suffix
     admin    = module.admin.target_group_arn_suffix
@@ -3125,6 +3440,10 @@ output "alarm_topic_arn" {
   description = "SNS topic for alarms (subscribe on-call here)."
   value       = module.alarms.topic_arn
 }
+output "canary_name" {
+  description = "Synthetics canary that HEADs the canary short link every minute."
+  value       = module.alarms.canary_name
+}
 output "private_subnet_ids" {
   description = "Subnets for run-task network configuration."
   value       = var.private_subnet_ids
@@ -3175,6 +3494,7 @@ variables {
   ecs_cluster_arn    = "arn:aws:ecs:us-east-1:123456789012:cluster/platform"
   github_repository  = "example/shortener"
   image_tag          = "abc123"
+  canary_link_code   = "aZ3kQ9x"
 }
 
 run "prod_sizes" {
@@ -3223,7 +3543,7 @@ provider "aws" {
 }
 ```
 
-`terraform/envs/prod/variables.tf`: `aws_region` (default `"us-east-1"`), `domain`, `route53_zone_id`, `vpc_id`, `private_subnet_ids`, `public_subnet_ids`, `ecs_cluster_arn`, `github_repository`, `github_oidc_provider_arn` (default null), `admin_cidrs` (default `[]`), `image_tag`. Each has a description and a type.
+`terraform/envs/prod/variables.tf`: `aws_region` (default `"us-east-1"`), `domain`, `route53_zone_id`, `vpc_id`, `private_subnet_ids`, `public_subnet_ids`, `ecs_cluster_arn`, `github_repository`, `github_oidc_provider_arn` (default null), `admin_cidrs` (default `[]`), `image_tag`, `canary_link_code` (required, no default). Each has a description and a type.
 
 `terraform/envs/prod/main.tf`:
 ```hcl
@@ -3240,6 +3560,7 @@ module "stack" {
   github_oidc_provider_arn = var.github_oidc_provider_arn
   admin_cidrs              = var.admin_cidrs
   image_tag                = var.image_tag
+  canary_link_code         = var.canary_link_code
   sizes = {
     db_instance_class        = "db.t4g.small"
     db_multi_az              = true
@@ -3269,9 +3590,21 @@ ecs_cluster_arn    = "arn:aws:ecs:us-east-1:123456789012:cluster/platform"
 github_repository  = "example-org/platform-url-shortner"
 admin_cidrs        = ["203.0.113.0/24"]
 image_tag          = "set-by-the-pipeline"
+canary_link_code   = "aZ3kQ9x" # generated code of the dedicated canary link (terraform/README.md runbook)
 ```
 
-`terraform/envs/staging/*`: the same files with `Environment = "staging"`, `environment_name = "staging"`, the staging sizes from the table, and `domain = "staging.shortener.example.com"` in the tfvars example.
+`terraform/envs/prod/backend.hcl.example` (spec T10; the bucket is platform-owned and versioned, with native S3 locking):
+```hcl
+# terraform init -backend-config=backend.hcl   (copy from this example; real values come from the platform team)
+bucket     = "example-platform-terraform-state"
+key        = "shortener/prod/terraform.tfstate"
+region     = "us-east-1"
+kms_key_id = "alias/example-platform-terraform-state"
+# use_lockfile = true and encrypt = true are set in backend.tf.
+# A platform still on DynamoDB locking would add: dynamodb_table = "example-platform-terraform-locks"
+```
+
+`terraform/envs/staging/*`: the same files with `Environment = "staging"`, `environment_name = "staging"`, the staging sizes from the table, `domain = "staging.shortener.example.com"` in the tfvars example, and `key = "shortener/staging/terraform.tfstate"` in `backend.hcl.example`.
 
 Generate the committed lock files (this talks to the Terraform Registry only, never AWS):
 ```bash
@@ -3441,6 +3774,8 @@ It contains these sections, using the exact facts from the spec and the code:
 4. **Layout:** modules → stack → envs; tests live beside each module; the shared mock fixtures are in `terraform/testing/aws`.
 5. **Deploy sequence:** the steps from spec §8, as commands a pipeline would run (`aws ecs run-task` with the `one_off_tasks` family plus its security group and `private_subnet_ids`, then `aws ecs update-service`), run by the OIDC role from self-hosted runners.
 6. **Secrets:** write-only values, how to rotate them (bump `secret_version`), and the RDS-managed master secret.
+6a. **Terraform state (T10):** the platform-owned versioned S3 bucket, one key per environment, native S3 locking (DynamoDB fallback), and `terraform init -backend-config=backend.hcl`.
+6b. **Canary link runbook:** after the first deploy of an environment, sign in as an admin and create a link to a stable target (for example `https://example.com/`) through the admin UI or `POST /api/v1/links`. Put its generated code in `canary_link_code` and apply. Never delete or block that link; if someone does, the canary pages, which is the intended behaviour.
 7. **Observability:**
    - CloudWatch metrics (EMF namespace `Shortener`), X-Ray traces, Logs Insights on `trace_id`.
    - Trace-id mapping: `1-<first 8 hex>-<remaining 24>`.

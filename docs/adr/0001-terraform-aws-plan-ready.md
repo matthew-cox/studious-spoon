@@ -1,9 +1,10 @@
 # ADR 0001: Terraform for AWS (plan-ready, offline-tested)
 
 - **Status:** Accepted (design). Implementation **not started** as of 2026-10-02.
-- **Spec:** `docs/superpowers/specs/2026-10-02-terraform-aws-design.md` (254 lines; decisions T1–T9).
-- **Plan:** `docs/superpowers/plans/2026-10-02-terraform-aws.md` (12 tasks, about 3,500 lines; read one task at a time).
+- **Spec:** `docs/superpowers/specs/2026-10-02-terraform-aws-design.md` (decisions T1–T10).
+- **Plan:** `docs/superpowers/plans/2026-10-02-terraform-aws.md` (12 tasks, about 3,800 lines; read one task at a time).
 - **Resume here:** `docs/superpowers/plans/2026-10-02-terraform-aws-HANDOFF.md`.
+- **The one-page ops answer** (diagram, state, monitoring): `docs/operations.md`.
 
 ## Context
 - **Why:** a technical-interview exercise. The URL shortener already runs fully locally (Docker/colima) and was designed to map onto AWS (parent spec `2026-10-01-url-shortener-design.md` §11).
@@ -22,9 +23,11 @@
 | T7 | **DB roles and databases come from a one-off `db-bootstrap` ECS task** (an idempotent `psql` script), not the PostgreSQL provider. | RDS is private, so that provider would break offline planning. |
 | T8 | **A GitHub OIDC deploy role** (trust pinned to repository + environment, least privilege); no deploy workflow. The user runs self-hosted runners in AWS. | No long-lived keys. Exception: `ecr:GetAuthorizationToken`, `ecs:RegisterTaskDefinition` and `ecs:DescribeTaskDefinition` only accept `Resource: "*"`. |
 | T9 | **Tooling:** Terraform via tfenv (`.terraform-version` = 1.16.5); `tflint` and `trivy` via Homebrew; CI pins the same versions. | One version source for local and CI. |
+| T10 | **The Terraform state backend is platform-owned:** a versioned, SSE-KMS, public-access-blocked S3 bucket; one key per environment (`shortener/<env>/terraform.tfstate`); native S3 locking (`use_lockfile`). | Isolates staging from prod and allows recovery from bad writes. DynamoDB lock tables are deprecated since Terraform 1.11 (`dynamodb_table` if the platform still uses them). |
 
 Also decided:
-- Six alarms go to an SNS topic: DLQ not empty, backlog age > 300 s, 5xx rate > 2%, unhealthy targets, RDS CPU/storage, processor down.
+- Alarms go to an SNS topic: DLQ not empty, backlog age > 300 s, 5xx rate > 2% (the ALB's own 5xx **plus** target 5xx), unhealthy targets, RDS CPU/storage, processor down.
+- An outside-in **Synthetics canary** sends `HEAD` to a dedicated canary short link on `go.<domain>` every minute and expects 302. It's the only signal for DNS, certificate and ALB-rule failures. HEAD records no click, so the canary never pollutes stats.
 - The processor's `stopTimeout` is 60 s.
 - Keycloak's `/admin/*` is restricted to an IP allowlist.
 - An AWS Keycloak image with the `shortener-dev` client stripped and the admin redirect URI taken from `${ADMIN_PUBLIC_BASE_URL}`.

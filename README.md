@@ -5,6 +5,7 @@ and OpenTelemetry. Runs entirely locally; designed to map onto AWS (see the spec
 
 - Design spec: `docs/superpowers/specs/2026-10-01-url-shortener-design.md`
 - Implementation plans: `docs/superpowers/plans/`
+- Deployment & operations (diagram, state, monitoring): `docs/operations.md`
 
 ## Prerequisites macOS
 

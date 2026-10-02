@@ -12,7 +12,7 @@
 - Prove it offline: `terraform fmt`, `validate`, `tflint`, a `trivy` config scan, and `terraform test` with mocked AWS providers, locally (`make tf-check`) and in CI.
 - No secret value ever stored in Terraform state or committed.
 - The AWS side of a deploy pipeline: a least-privilege GitHub OIDC deploy role.
-- A small set of CloudWatch alarms that cover the failure modes the system was designed around.
+- A small set of CloudWatch alarms that cover the failure modes the system was designed around, plus an outside-in Synthetics canary on redirects.
 
 **Non-Goals**
 - `terraform apply` into a real account. No AWS costs are incurred, ever.
@@ -34,6 +34,7 @@
 | T7 | **Database roles and databases are created by a one-off `db-bootstrap` ECS task**, not the Terraform PostgreSQL provider | RDS is private, so that provider would need network access during `plan`, which breaks offline planning and tests. The task reuses the local `bootstrap.sql` semantics, made idempotent. |
 | T8 | **GitHub OIDC deploy role** (trust pinned to repository + GitHub environment), no deploy workflow | Fits self-hosted runners in AWS. No long-lived keys; least privilege is the interesting part. A workflow that can never run would be unproven code. |
 | T9 | **Tooling:** Terraform via **tfenv** (`.terraform-version`), `tflint` and `trivy` via Homebrew locally; pinned releases in CI | One version source for local and CI. |
+| T10 | **Terraform state backend is platform-owned and assumed:** a versioned, SSE-KMS-encrypted, public-access-blocked S3 bucket; one state key per environment (`shortener/<env>/terraform.tfstate`); native S3 locking (`use_lockfile = true`) | Per-environment keys isolate staging from prod (separate locks, no cross-environment blast radius); versioning allows recovery from a bad state write. DynamoDB lock tables are deprecated since Terraform 1.11; a platform still using them sets `dynamodb_table` instead. State holds no secret values (T6) but is still sensitive (IDs, endpoints), so bucket access is limited to the CI/deploy roles. |
 
 ## 3. Layout
 
@@ -58,7 +59,7 @@ terraform/
 infra/keycloak/Dockerfile   optimized Keycloak image with the realm baked in (the one addition outside terraform/)
 ```
 
-- **State:** each environment root declares an S3 backend with native S3 locking (`use_lockfile = true`) via partial configuration. It is never initialized here (`init -backend=false`).
+- **State (T10):** each environment root declares an S3 backend with native S3 locking (`use_lockfile = true`) via partial configuration, plus a `backend.hcl.example` naming the platform bucket, the key `shortener/<env>/terraform.tfstate`, and the region. It is never initialized here (`init -backend=false`).
 - **Versions:** Terraform `~> 1.13` and AWS provider `~> 6.x`; exact current releases are pinned when the plan is written. `random` provider for ephemeral passwords.
 
 ## 4. Platform Inputs (per environment)
@@ -74,6 +75,8 @@ infra/keycloak/Dockerfile   optimized Keycloak image with the realm baked in (th
 | `github_oidc_provider_arn` | Optional; when null the module creates the provider |
 | `admin_cidrs` | CIDRs allowed to reach the Keycloak admin console |
 | `image_tag` | Image tag to deploy (set by the pipeline) |
+| `canary_link_code` | Generated short code of a dedicated link the canary probes (required). The API always generates codes, so the link is created once per environment and its code is set here. |
+| (backend) | Platform state bucket name, region, and KMS key, supplied with `-backend-config` (T10) |
 
 ## 5. Edge
 
@@ -195,6 +198,12 @@ infra/keycloak/Dockerfile   optimized Keycloak image with the realm baked in (th
 - **Logs:** JSON lines on stdout → CloudWatch Logs (`awslogs`). Logs Insights queries can filter on `trace_id`. OTLP log export is not used on AWS.
 - **Dashboards:** follow-up work (T2).
 
+**Redirect canary (`alarms`)**
+- A CloudWatch Synthetics canary (Python runtime) sends `HEAD https://go.<domain>/<canary_link_code>` every minute without following redirects, and passes only on `302`. HEAD returns the same status as GET but records no click, so the canary never pollutes stats.
+- It is the only signal that sees DNS, certificate, and ALB-rule failures, which produce no 5xx.
+- Artifacts go to a private, encrypted S3 bucket with a 14-day lifecycle.
+- The canary link is created once per environment (runbook in `terraform/README.md`); if it is deleted, the canary fails, which is the intended alert.
+
 **Alarms (`alarms`)**
 - An SNS topic encrypted with KMS. Subscriptions are left to the platform or on-call setup; the topic ARN is an output.
 
@@ -202,7 +211,8 @@ infra/keycloak/Dockerfile   optimized Keycloak image with the realm baked in (th
 |---|---|---|
 | DLQ not empty | `click-events-dlq` `ApproximateNumberOfMessagesVisible` > 0 for 5 min | not breaching |
 | Click backlog stale | `click-events` `ApproximateAgeOfOldestMessage` > 300 s for 5 min | not breaching |
-| API/redirect errors | ALB target 5xx ÷ requests > 2% for 5 min, only when requests ≥ 50 (metric math) | not breaching |
+| API/redirect errors | (ALB **target** 5xx + ALB **own** 5xx) ÷ requests > 2% for 5 min, only when requests ≥ 50 (metric math). The ALB's own 502/503 is what visitors get when no target is healthy. | not breaching |
+| Redirects failing from outside | Synthetics canary `SuccessPercent` < 100 for 2 consecutive 1-minute runs | breaching |
 | Unhealthy targets | any target group `UnHealthyHostCount` > 0 for 5 min | not breaching |
 | RDS pressure | `CPUUtilization` > 80% for 15 min, or `FreeStorageSpace` < 2 GiB | breaching |
 | Processor down | Container Insights `RunningTaskCount` < 1 for the processor service | breaching |
