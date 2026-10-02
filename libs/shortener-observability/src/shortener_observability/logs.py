@@ -24,6 +24,23 @@ class RedactAccessQuery(logging.Filter):
         return True
 
 
+class DropHealthChecks(logging.Filter):
+    """Drop successful /healthz and /readyz access lines (orchestrator probes every few seconds).
+
+    Failed probes (status >= 400) are kept: a 503 from /readyz is worth seeing.
+    """
+
+    PATHS = frozenset({"/healthz", "/readyz"})
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 5 and isinstance(args[2], str):
+            status = args[4]
+            if args[2].split("?", 1)[0] in self.PATHS and isinstance(status, int) and status < 400:
+                return False
+        return True
+
+
 class JsonFormatter(logging.Formatter):
     def __init__(self, service_name: str) -> None:
         super().__init__()
@@ -64,5 +81,6 @@ def configure_logging(
         logger.handlers.clear()
         logger.propagate = True
     access = logging.getLogger("uvicorn.access")
-    if not any(isinstance(f, RedactAccessQuery) for f in access.filters):
-        access.addFilter(RedactAccessQuery())
+    for access_filter in (DropHealthChecks, RedactAccessQuery):
+        if not any(isinstance(f, access_filter) for f in access.filters):
+            access.addFilter(access_filter())

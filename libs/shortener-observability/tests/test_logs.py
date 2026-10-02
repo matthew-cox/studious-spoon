@@ -2,7 +2,7 @@ import json
 import logging
 import sys
 
-from shortener_observability.logs import JsonFormatter, configure_logging
+from shortener_observability.logs import DropHealthChecks, JsonFormatter, configure_logging
 
 
 def record(message: str = "hello", exc_info=None) -> logging.LogRecord:
@@ -58,3 +58,33 @@ def test_uvicorn_access_line_drops_the_query_string(capsys):
     message = json.loads(out.strip().splitlines()[-1])["message"]
     assert message == '127.0.0.1:1234 - "GET /auth/callback HTTP/1.1" 400'
     assert "SECRETCODE" not in out and "SECRETSTATE" not in out
+
+
+def access_line(path: str, status: int) -> None:
+    logging.getLogger("uvicorn.access").info(
+        '%s - "%s %s HTTP/%s" %d', "127.0.0.1:1234", "GET", path, "1.1", status
+    )
+
+
+def test_successful_health_checks_are_not_logged(capsys):
+    configure_logging("shortener-api", level="INFO")
+    access_line("/healthz", 200)
+    access_line("/readyz", 200)
+    access_line("/readyz?probe=1", 200)
+    access_line("/links", 200)
+    messages = [json.loads(line)["message"] for line in capsys.readouterr().out.splitlines()]
+    assert messages == ['127.0.0.1:1234 - "GET /links HTTP/1.1" 200']
+
+
+def test_failing_health_checks_are_still_logged(capsys):
+    configure_logging("shortener-api", level="INFO")
+    access_line("/readyz", 503)
+    messages = [json.loads(line)["message"] for line in capsys.readouterr().out.splitlines()]
+    assert messages == ['127.0.0.1:1234 - "GET /readyz HTTP/1.1" 503']
+
+
+def test_health_filter_is_installed_once(capsys):
+    configure_logging("shortener-api", level="INFO")
+    configure_logging("shortener-api", level="INFO")
+    access = logging.getLogger("uvicorn.access")
+    assert sum(isinstance(f, DropHealthChecks) for f in access.filters) == 1
