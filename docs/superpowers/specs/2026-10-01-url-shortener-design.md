@@ -418,6 +418,8 @@ Jinja2 + HTMX, with Pico.css for styling and Chart.js for charts. All vendored u
 
 ## 11. AWS Mapping (for the later Terraform discussion)
 
+> **Terraform:** designed and planned, not yet implemented. Start at `docs/superpowers/plans/2026-10-02-terraform-aws-HANDOFF.md` (decisions: `docs/adr/0001-terraform-aws-plan-ready.md`).
+
 | Local | AWS |
 |---|---|
 | `api`, `admin` containers | ECS Fargate services behind an ALB (host- or path-based routing) |
