@@ -60,10 +60,28 @@ click() {
   done
 }
 
+MATT_AND_BOB=(
+  "https://www.neu.edu"
+  "https://www.khoury.northeastern.edu/"
+  "https://www.iq.harvard.edu/"
+  "https://www.iq.harvard.edu/research-computing"
+  "https://extension.harvard.edu/"
+  "https://github.com/matthew-cox/PatchMatch-CUDA"
+)
+
 putinfo "Fetching tokens for eddie, erin and sam..."
 # Up front, so the create calls below (run in $(...) subshells) reuse them.
 api_login eddie erin sam
 putsuccess "Tokens fetched"
+
+for i in "${!MATT_AND_BOB[@]}"; do
+  putinfo "Creating special link #$((i + 1))..."
+  the_link=$(create eddie "${MATT_AND_BOB[i]}")
+  click "$(field code "$the_link")" 17 -
+  putsuccess "Link created and clicked: $(field short_url "$the_link")"
+done
+
+exit
 
 putinfo "Creating links..."
 sale=$(create eddie "https://example.com/spring-sale?utm_source=newsletter")
