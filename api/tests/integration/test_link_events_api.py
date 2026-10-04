@@ -26,7 +26,11 @@ async def test_block_and_unblock_are_recorded_with_actor_and_reason(
         f"/api/v1/links/{eddies_link['id']}/block", json={"reason": " phishing "}, headers=alice
     )
     clock.advance(timedelta(minutes=5))
-    await client.post(f"/api/v1/links/{eddies_link['id']}/unblock", headers=alice)
+    await client.post(
+        f"/api/v1/links/{eddies_link['id']}/unblock",
+        json={"reason": " owner fixed the target "},
+        headers=alice,
+    )
 
     response = await history(client, alice, eddies_link["id"])
 
@@ -36,7 +40,7 @@ async def test_block_and_unblock_are_recorded_with_actor_and_reason(
     assert events[0]["actor_username"] == "alice"
     assert events[0]["reason"] == "phishing"
     assert events[0]["link_code"] == eddies_link["code"]
-    assert events[1]["reason"] is None
+    assert events[1]["reason"] == "owner fixed the target"
     assert events[1]["occurred_at"] > events[0]["occurred_at"]
 
 

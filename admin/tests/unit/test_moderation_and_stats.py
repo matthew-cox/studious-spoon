@@ -71,11 +71,24 @@ async def test_double_block_shows_conflict_inline(client, mocks, ids, login_as):
     assert response.status_code == 409 and "Link is already blocked" in response.text
 
 
+async def test_unblock_form_asks_for_a_reason(client, mocks, ids, login_as):
+    await login_as("sam", ("support",))
+    detail_routes(mocks, ids, LINK | {"status": "blocked", "blocked_reason": "phishing"})
+    mocks.get(f"{ids['API']}/api/v1/links/{LID}/events").respond(json=[])
+    page = (await client.get(f"/links/{LID}")).text
+    form = page[page.index(f'action="/links/{LID}/unblock"') :]
+    form = form[: form.index("</form>")]
+    assert re.search(r'<input type="text" name="reason" required', form)
+
+
 async def test_unblock(client, mocks, ids, login_as):
     session = await login_as("alice", ("admin",))
     route = mocks.post(f"{ids['API']}/api/v1/links/{LID}/unblock").respond(json=LINK)
-    response = await client.post(f"/links/{LID}/unblock", data={"csrf_token": session.csrf_token})
+    response = await client.post(
+        f"/links/{LID}/unblock", data={"csrf_token": session.csrf_token, "reason": "false report"}
+    )
     assert response.status_code == 303 and route.called
+    assert json.loads(route.calls.last.request.content) == {"reason": "false report"}
 
 
 async def test_detail_renders_chart_referrers_and_data_as_of(client, mocks, ids, login_as):

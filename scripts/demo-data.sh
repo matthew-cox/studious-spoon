@@ -81,8 +81,6 @@ for i in "${!MATT_AND_BOB[@]}"; do
   putsuccess "Link created and clicked: $(field short_url "$the_link")"
 done
 
-exit
-
 putinfo "Creating links..."
 sale=$(create eddie "https://example.com/spring-sale?utm_source=newsletter")
 docs=$(create eddie "https://docs.example.com/getting-started")
@@ -111,7 +109,8 @@ call sam POST "/links/$(field id "$prize")/block" \
   '{"reason": "Prize scam reported by two customers (ticket DEMO-101)"}' >/dev/null
 call sam POST "/links/$(field id "$survey")/block" \
   '{"reason": "Suspected credential harvesting (ticket DEMO-102)"}' >/dev/null
-call sam POST "/links/$(field id "$survey")/unblock" >/dev/null
+call sam POST "/links/$(field id "$survey")/unblock" \
+  '{"reason": "Survey is ours: marketing confirmed it (ticket DEMO-102)"}' >/dev/null
 # Visitors still following the blocked link get 410 and aren't counted as clicks.
 click "$(field code "$prize")" 5
 putsuccess "Owner and moderation activity added"

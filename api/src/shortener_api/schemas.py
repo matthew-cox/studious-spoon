@@ -35,7 +35,9 @@ class LinkUpdate(BaseModel):
         return self
 
 
-class BlockRequest(BaseModel):
+class ModerationRequest(BaseModel):
+    """Body for block and unblock: why, recorded in the moderation history."""
+
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 

@@ -271,10 +271,18 @@ async def block_link(
 
 
 @router.post("/links/{link_id}/unblock")
-async def unblock_link(request: Request, link_id: str, deps: Deps, session: Mutate) -> Response:
+async def unblock_link(
+    request: Request, link_id: str, deps: Deps, session: Mutate, reason: Annotated[str, Form()] = ""
+) -> Response:
     lid = _uuid_or_none(link_id)
     if lid is None:
         return _not_found(request)
     token = session.tokens.access_token
-    return await _act(request, deps, session, lid, lambda: deps.api.unblock_link(token, lid),
-                      f"/links/{lid}?updated=1")  # fmt: skip
+    return await _act(
+        request,
+        deps,
+        session,
+        lid,
+        lambda: deps.api.unblock_link(token, lid, reason),
+        f"/links/{lid}?updated=1",
+    )

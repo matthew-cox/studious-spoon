@@ -17,6 +17,12 @@ async def block(client, headers, link, reason="phishing"):
     )
 
 
+async def unblock(client, headers, link, reason="false report"):
+    return await client.post(
+        f"/api/v1/links/{link['id']}/unblock", json={"reason": reason}, headers=headers
+    )
+
+
 async def test_admin_blocks_with_a_reason(client, token_for, eddies_link, metric_value):
     response = await block(client, token_for("alice"), eddies_link, "  phishing kit  ")
     assert response.status_code == 200
@@ -61,18 +67,28 @@ async def test_unblock_restores_previous_state(client, token_for, eddies_link):
         f"/api/v1/links/{eddies_link['id']}", json={"is_active": False}, headers=token_for("eddie")
     )
     await block(client, token_for("alice"), eddies_link)
-    response = await client.post(
-        f"/api/v1/links/{eddies_link['id']}/unblock", headers=token_for("alice")
-    )
+    response = await unblock(client, token_for("alice"), eddies_link)
     assert response.status_code == 200
     assert response.json()["status"] == "disabled"
     assert response.json()["blocked_reason"] is None
 
 
-async def test_unblocking_an_unblocked_link_is_409(client, token_for, eddies_link):
+@pytest.mark.parametrize("reason", ["", "   ", "x" * 1001])
+async def test_unblock_reason_is_required_and_bounded(client, token_for, eddies_link, reason):
+    await block(client, token_for("alice"), eddies_link)
+    assert (await unblock(client, token_for("alice"), eddies_link, reason)).status_code == 422
+
+
+async def test_unblock_without_a_body_is_422(client, token_for, eddies_link):
+    await block(client, token_for("alice"), eddies_link)
     response = await client.post(
         f"/api/v1/links/{eddies_link['id']}/unblock", headers=token_for("alice")
     )
+    assert response.status_code == 422
+
+
+async def test_unblocking_an_unblocked_link_is_409(client, token_for, eddies_link):
+    response = await unblock(client, token_for("alice"), eddies_link)
     assert response.status_code == 409
     assert response.json()["title"] == "Link is not blocked"
 

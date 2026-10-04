@@ -112,7 +112,7 @@ async def test_block_and_unblock_preserve_is_active(repo, clock):
     assert blocked.status == "blocked"
     assert blocked.facts().blocked is True
     assert await repo.block(link.id, actor=ALICE, reason="again", now=clock.now()) is None
-    unblocked = await repo.unblock(link.id, actor=ALICE, now=clock.now())
+    unblocked = await repo.unblock(link.id, actor=ALICE, reason="resolved", now=clock.now())
     assert unblocked.status == "disabled"  # returns to the owner's previous choice
     assert unblocked.blocked_by is None and unblocked.blocked_reason is None
-    assert await repo.unblock(link.id, actor=ALICE, now=clock.now()) is None
+    assert await repo.unblock(link.id, actor=ALICE, reason="again", now=clock.now()) is None

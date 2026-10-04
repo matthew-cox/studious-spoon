@@ -59,6 +59,7 @@
   {% if link.status == "blocked" %}
   <form method="post" action="/links/{{ link.id }}/unblock">
     <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <label>Reason for unblocking (recorded in the history) <input type="text" name="reason" required maxlength="1000"></label>
     <button type="submit" class="secondary">Unblock</button>
   </form>
   {% else %}

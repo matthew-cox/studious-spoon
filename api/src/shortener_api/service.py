@@ -156,9 +156,11 @@ class LinkService:
         logger.info("link %s blocked by %s", link_id, principal.sub)
         return blocked
 
-    async def unblock(self, principal: Principal, link_id: UUID) -> Link:
+    async def unblock(self, principal: Principal, link_id: UUID, reason: str) -> Link:
         await self._visible(principal, link_id, Action.BLOCK)
-        unblocked = await self._repo.unblock(link_id, actor=principal, now=self._clock.now())
+        unblocked = await self._repo.unblock(
+            link_id, actor=principal, reason=reason, now=self._clock.now()
+        )
         if unblocked is None:
             if await self._repo.get(link_id) is None:
                 raise _not_found()

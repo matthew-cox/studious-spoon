@@ -2,6 +2,8 @@
 
 import html
 import re
+import time
+import uuid
 
 import httpx
 import pytest
@@ -32,10 +34,21 @@ def browser():
         yield client
 
 
+@pytest.fixture
+def second_browser():
+    with httpx.Client(timeout=15) as client:
+        yield client
+
+
 def csrf_of(page: httpx.Response) -> str:
     match = CSRF.search(page.text)
     assert match, "no CSRF token on page"
     return match.group(1)
+
+
+def submit(client: httpx.Client, url: str, page: httpx.Response, **fields: str) -> httpx.Response:
+    """Post a form the way the browser would: with the page's CSRF token, following redirects."""
+    return client.post(url, data={"csrf_token": csrf_of(page), **fields}, follow_redirects=True)
 
 
 def test_eddie_logs_in_and_lands_on_next(browser, e2e_settings):
@@ -83,3 +96,45 @@ def test_logout_ends_the_session(browser, e2e_settings):
     assert out.status_code == 303 and "/protocol/openid-connect/logout" in out.headers["location"]
     after = browser.get(f"{base}/")
     assert after.status_code == 303 and after.headers["location"].startswith("/auth/login")
+
+
+def test_support_handles_a_phishing_report_end_to_end(browser, second_browser, e2e_settings):
+    """The brief's workflow as sam: find the link, judge its traffic, block it, see the record."""
+    base = e2e_settings.admin_url
+    # Setup: eddie owns a link, and a visitor follows it from webmail.
+    form = keycloak_login(second_browser, base, "eddie", "/links/new")
+    target = f"https://example.com/login-{uuid.uuid4().hex[:8]}"
+    created = submit(second_browser, f"{base}/links", form, target_url=target)
+    link_path = created.url.path
+    short_url = html.unescape(re.search(r'data-copy="([^"]+)"', created.text).group(1))
+    visit = httpx.get(short_url, headers={"Referer": "https://mail.google.com/mail/u/0/"})
+    assert visit.status_code == 302 and visit.headers["location"] == target
+
+    # 1. Find the link from the report: paste the short URL into search.
+    keycloak_login(browser, base, "sam")
+    found = browser.get(f"{base}/links", params={"q": short_url})
+    assert found.status_code == 200 and f'href="{link_path}"' in found.text
+
+    # 2. Judge its traffic: the click and its referrer show up on the link page.
+    deadline = time.monotonic() + 30
+    page = browser.get(f"{base}{link_path}")
+    while "<strong>1</strong> clicks" not in page.text and time.monotonic() < deadline:
+        time.sleep(0.5)  # the click-processor rolls the event up asynchronously
+        page = browser.get(f"{base}{link_path}")
+    assert "<strong>1</strong> clicks" in page.text and "mail.google.com" in page.text
+
+    # 3. Disable it: block with a reason; visitors stop being redirected.
+    blocked = submit(browser, f"{base}{link_path}/block", page, reason="Phishing report T-1")
+    assert "Blocked by a moderator." in blocked.text
+    assert httpx.get(short_url).status_code == 410
+
+    # 4. A record of what happened and who did it.
+    history = blocked.text[blocked.text.index("<h2>History</h2>") :]
+    assert re.search(r"<td>Blocked</td>\s*<td>sam</td>\s*<td>Phishing report T-1</td>", history)
+
+    # Clean up: unblocking needs a reason too, then the owner deletes the link.
+    unblocked = submit(browser, f"{base}{link_path}/unblock", blocked, reason="Test done")
+    assert re.search(r"<td>Unblocked</td>\s*<td>sam</td>\s*<td>Test done</td>", unblocked.text)
+    owner_page = second_browser.get(f"{base}{link_path}")
+    deleted = submit(second_browser, f"{base}{link_path}/delete", owner_page)
+    assert "Link deleted" in deleted.text

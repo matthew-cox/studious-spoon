@@ -8,13 +8,13 @@ from shortener_api.deps import AppDeps, get_deps
 from shortener_api.links_repo import LinkQuery, LinkRepository
 from shortener_api.policy import Principal
 from shortener_api.schemas import (
-    BlockRequest,
     LinkCreate,
     LinkEventOut,
     LinkOut,
     LinkPage,
     LinkUpdate,
     MeOut,
+    ModerationRequest,
 )
 from shortener_api.service import LinkService
 
@@ -98,16 +98,24 @@ async def delete_link(link_id: UUID, principal: CurrentPrincipal, service: Servi
 
 @router.post("/links/{link_id}/block")
 async def block_link(
-    link_id: UUID, body: BlockRequest, principal: CurrentPrincipal, service: Service, deps: Deps
+    link_id: UUID,
+    body: ModerationRequest,
+    principal: CurrentPrincipal,
+    service: Service,
+    deps: Deps,
 ) -> LinkOut:
     return LinkOut.of(await service.block(principal, link_id, body.reason), _base(deps))
 
 
 @router.post("/links/{link_id}/unblock")
 async def unblock_link(
-    link_id: UUID, principal: CurrentPrincipal, service: Service, deps: Deps
+    link_id: UUID,
+    body: ModerationRequest,
+    principal: CurrentPrincipal,
+    service: Service,
+    deps: Deps,
 ) -> LinkOut:
-    return LinkOut.of(await service.unblock(principal, link_id), _base(deps))
+    return LinkOut.of(await service.unblock(principal, link_id, body.reason), _base(deps))
 
 
 @router.get("/links/{link_id}/events")

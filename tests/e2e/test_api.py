@@ -97,7 +97,8 @@ def test_support_moderates_but_cannot_change_links(api, auth):
 
     assert api.post(f"{url}/block", json={"reason": "phishing"}, headers=sam).status_code == 200
     assert api.get(f"/{link['code']}").status_code == 410
-    assert api.post(f"{url}/unblock", headers=sam).status_code == 200
+    unblocked = api.post(f"{url}/unblock", json={"reason": "false report"}, headers=sam)
+    assert unblocked.status_code == 200
     history = api.get(f"{url}/events", headers=sam).json()
     assert [(e["action"], e["actor_username"]) for e in history] == [
         ("block", "sam"),

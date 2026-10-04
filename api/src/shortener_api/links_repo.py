@@ -212,14 +212,16 @@ class LinkRepository:
         )
         return await self._moderate(stmt, "block", actor, now, reason)
 
-    async def unblock(self, link_id: UUID, *, actor: Principal, now: datetime) -> Link | None:
+    async def unblock(
+        self, link_id: UUID, *, actor: Principal, reason: str, now: datetime
+    ) -> Link | None:
         stmt = (
             sa.update(links)
             .where(links.c.id == link_id, links.c.blocked_at.is_not(None))
             .values(blocked_at=None, blocked_by=None, blocked_reason=None, updated_at=now)
             .returning(*links.c)
         )
-        return await self._moderate(stmt, "unblock", actor, now)
+        return await self._moderate(stmt, "unblock", actor, now, reason)
 
     async def _moderate(
         self,

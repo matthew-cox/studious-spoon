@@ -27,7 +27,9 @@ async def test_support_blocks_unblocks_and_reads_history(client, token_for, eddi
     path = f"/api/v1/links/{eddies_link['id']}"
     blocked = await client.post(f"{path}/block", json={"reason": "phishing"}, headers=sam)
     assert blocked.status_code == 200 and blocked.json()["status"] == "blocked"
-    assert (await client.post(f"{path}/unblock", headers=sam)).status_code == 200
+    assert (
+        await client.post(f"{path}/unblock", json={"reason": "false report"}, headers=sam)
+    ).status_code == 200
 
     events = (await client.get(f"{path}/events", headers=sam)).json()
 
