@@ -7,7 +7,7 @@
     <tr>
       <td><a href="/links/{{ link.id }}">{{ link.code }}</a></td>
       <td class="target">{{ link.target_url }}</td>
-      <td>{{ link.owner_username }}</td>
+      <td><a href="/links?{{ {"owner": link.owner_username} | urlencode }}">{{ link.owner_username }}</a></td>
       <td><span class="badge {{ link.status }}">{{ link.status }}</span></td>
       <td>{{ link.created_at | as_of }}</td>
     </tr>

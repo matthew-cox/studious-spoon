@@ -39,6 +39,13 @@ def test_link_lifecycle(api, auth):
 
     assert api.get(url, headers=auth("erin")).status_code == 404
     assert api.get(url, headers=auth("victor")).status_code == 200
+    eddies = api.get(
+        "/api/v1/links", params={"owner": "eddie", "page_size": 100}, headers=auth("alice")
+    ).json()
+    assert link["id"] in {i["id"] for i in eddies["items"]}
+    assert {i["owner_username"] for i in eddies["items"]} == {"eddie"}
+    pasted = api.get("/api/v1/links", params={"q": link["short_url"]}, headers=auth("alice"))
+    assert [i["id"] for i in pasted.json()["items"]] == [link["id"]]
     forbidden = api.post(
         "/api/v1/links", json={"target_url": "https://x.example"}, headers=auth("victor")
     )
@@ -63,5 +70,39 @@ def test_link_lifecycle(api, auth):
     assert blocked.status_code == 200
     assert api.patch(url, json={"is_active": True}, headers=auth("eddie")).status_code == 409
     assert api.get(f"/{link['code']}").status_code == 410
+    assert api.get(f"{url}/events", headers=auth("eddie")).status_code == 403  # admins only
 
     assert api.delete(url, headers=auth("alice")).status_code == 204
+    history = api.get(f"{url}/events", headers=auth("alice")).json()  # outlives the link
+    assert [(e["action"], e["actor_username"], e["reason"]) for e in history] == [
+        ("block", "alice", "e2e abuse test"),
+        ("delete", "alice", None),
+    ]
+
+
+def test_support_moderates_but_cannot_change_links(api, auth):
+    link = api.post(
+        "/api/v1/links", json={"target_url": "https://example.com/report"}, headers=auth("eddie")
+    ).json()
+    url = f"/api/v1/links/{link['id']}"
+    sam = auth("sam")
+
+    assert api.get(url, headers=sam).status_code == 200
+    assert (
+        api.post("/api/v1/links", json={"target_url": "https://x.example"}, headers=sam).status_code
+        == 403
+    )
+    assert api.patch(url, json={"is_active": False}, headers=sam).status_code == 403
+    assert api.delete(url, headers=sam).status_code == 403
+
+    assert api.post(f"{url}/block", json={"reason": "phishing"}, headers=sam).status_code == 200
+    assert api.get(f"/{link['code']}").status_code == 410
+    unblocked = api.post(f"{url}/unblock", json={"reason": "false report"}, headers=sam)
+    assert unblocked.status_code == 200
+    history = api.get(f"{url}/events", headers=sam).json()
+    assert [(e["action"], e["actor_username"]) for e in history] == [
+        ("block", "sam"),
+        ("unblock", "sam"),
+    ]
+
+    assert api.delete(url, headers=auth("eddie")).status_code == 204

@@ -22,6 +22,20 @@ links = sa.Table(
     schema="public",
 )
 
+link_events = sa.Table(
+    "link_events",
+    metadata,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=True), primary_key=True),
+    sa.Column("link_id", sa.Uuid, nullable=False),
+    sa.Column("link_code", sa.String(32), nullable=False),
+    sa.Column("action", sa.String(16), nullable=False),
+    sa.Column("actor_sub", sa.String(64), nullable=False),
+    sa.Column("actor_username", sa.String(255), nullable=False),
+    sa.Column("reason", sa.Text),
+    sa.Column("occurred_at", TZ, nullable=False),
+    schema="public",
+)
+
 link_clicks_hourly = sa.Table(
     "link_clicks_hourly",
     metadata,

@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import NoReturn
 from uuid import UUID
@@ -6,10 +7,17 @@ from uuid import UUID
 from shortener_api.clock import Clock
 from shortener_api.codes import RandomSource, generate_code
 from shortener_api.errors import ProblemError
-from shortener_api.links_repo import CodeTakenError, Link, LinkQuery, LinkRepository, Page
+from shortener_api.links_repo import (
+    CodeTakenError,
+    Link,
+    LinkEvent,
+    LinkQuery,
+    LinkRepository,
+    Page,
+)
 from shortener_api.policy import Action, Decision, Principal, decide, visible_owner
 from shortener_api.telemetry import ApiTelemetry
-from shortener_api.urls import InvalidTargetUrl, validate_target_url
+from shortener_api.urls import InvalidTargetUrl, short_code_from, validate_target_url
 
 logger = logging.getLogger(__name__)
 MAX_CODE_ATTEMPTS = 5
@@ -24,7 +32,7 @@ def _blocked(link: Link) -> ProblemError:
     return ProblemError(
         409,
         "Link is blocked",
-        f"Blocked by an administrator: {reason}",
+        f"Blocked by a moderator: {reason}",
         extra={"blocked_reason": reason},
     )
 
@@ -98,6 +106,8 @@ class LinkService:
 
     async def list(self, principal: Principal, query: LinkQuery) -> Page[Link]:
         enforce(decide(principal, Action.LIST))
+        if query.q and (code := short_code_from(query.q, self._base_url)):
+            query = replace(query, q=code)  # a pasted short URL, e.g. from an abuse report
         scope = visible_owner(principal)
         if scope is not None:  # editors only ever see their own links
             query = replace(query, owner_sub=scope)
@@ -124,13 +134,19 @@ class LinkService:
 
     async def delete(self, principal: Principal, link_id: UUID) -> None:
         await self._visible(principal, link_id, Action.DELETE)
-        if not await self._repo.delete(link_id, require_unblocked=not principal.is_admin):
+        deleted = await self._repo.delete(
+            link_id,
+            actor=principal,
+            now=self._clock.now(),
+            require_unblocked=not principal.is_admin,
+        )
+        if not deleted:
             await self._raise_current_state(link_id)
 
     async def block(self, principal: Principal, link_id: UUID, reason: str) -> Link:
         await self._visible(principal, link_id, Action.BLOCK)
         blocked = await self._repo.block(
-            link_id, by=principal.sub, reason=reason, now=self._clock.now()
+            link_id, actor=principal, reason=reason, now=self._clock.now()
         )
         if blocked is None:
             if await self._repo.get(link_id) is None:
@@ -140,12 +156,25 @@ class LinkService:
         logger.info("link %s blocked by %s", link_id, principal.sub)
         return blocked
 
-    async def unblock(self, principal: Principal, link_id: UUID) -> Link:
+    async def unblock(self, principal: Principal, link_id: UUID, reason: str) -> Link:
         await self._visible(principal, link_id, Action.BLOCK)
-        unblocked = await self._repo.unblock(link_id, now=self._clock.now())
+        unblocked = await self._repo.unblock(
+            link_id, actor=principal, reason=reason, now=self._clock.now()
+        )
         if unblocked is None:
             if await self._repo.get(link_id) is None:
                 raise _not_found()
             raise ProblemError(409, "Link is not blocked")
         logger.info("link %s unblocked by %s", link_id, principal.sub)
         return unblocked
+
+    async def events(self, principal: Principal, link_id: UUID) -> Sequence[LinkEvent]:
+        """Moderation history for moderators, readable even after the link is deleted."""
+        link = await self._repo.get(link_id)
+        if link is not None:
+            enforce(decide(principal, Action.AUDIT, link.facts()), link)
+            return await self._repo.events(link_id)
+        events = await self._repo.events(link_id) if principal.can_moderate else []
+        if not events:
+            raise _not_found()
+        return events

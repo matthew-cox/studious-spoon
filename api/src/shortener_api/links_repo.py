@@ -5,12 +5,13 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from shortener_api.db.tables import links
-from shortener_api.policy import LinkFacts
+from shortener_api.db.tables import link_events, links
+from shortener_api.policy import LinkFacts, Principal
 
 LinkStatus = Literal["active", "disabled", "blocked"]
+LinkEventAction = Literal["block", "unblock", "delete"]
 
 
 @dataclass(frozen=True)
@@ -38,10 +39,25 @@ class Link:
 
 
 @dataclass(frozen=True)
+class LinkEvent:
+    """One moderation action, kept after the link itself is deleted."""
+
+    id: int
+    link_id: UUID
+    link_code: str
+    action: LinkEventAction
+    actor_sub: str
+    actor_username: str
+    reason: str | None
+    occurred_at: datetime
+
+
+@dataclass(frozen=True)
 class LinkQuery:
     q: str | None = None
     status: LinkStatus | None = None
-    owner_sub: str | None = None
+    owner_sub: str | None = None  # visibility scope (policy.visible_owner)
+    owner_username: str | None = None  # caller's filter; exact match
     page: int = 1
     page_size: int = 20
 
@@ -125,6 +141,8 @@ class LinkRepository:
             conditions.append(links.c.is_active.is_(query.status == "active"))
         if query.owner_sub is not None:
             conditions.append(links.c.owner_sub == query.owner_sub)
+        if query.owner_username is not None:
+            conditions.append(links.c.owner_username == query.owner_username)
         return conditions
 
     async def search(self, query: LinkQuery) -> Page[Link]:
@@ -166,28 +184,90 @@ class LinkRepository:
             stmt = stmt.where(links.c.blocked_at.is_(None))
         return await self._returning_one(stmt.returning(*links.c))
 
-    async def delete(self, link_id: UUID, *, require_unblocked: bool = False) -> bool:
+    async def delete(
+        self,
+        link_id: UUID,
+        *,
+        actor: Principal,
+        now: datetime,
+        require_unblocked: bool = False,
+    ) -> bool:
         stmt = sa.delete(links).where(links.c.id == link_id)
         if require_unblocked:
             stmt = stmt.where(links.c.blocked_at.is_(None))
         async with self._engine.begin() as conn:
-            result = await conn.execute(stmt.returning(links.c.id))
-            return result.one_or_none() is not None
+            row = (await conn.execute(stmt.returning(links.c.id, links.c.code))).one_or_none()
+            if row is not None:
+                await _record(conn, row.id, row.code, "delete", actor, now)
+        return row is not None
 
-    async def block(self, link_id: UUID, *, by: str, reason: str, now: datetime) -> Link | None:
+    async def block(
+        self, link_id: UUID, *, actor: Principal, reason: str, now: datetime
+    ) -> Link | None:
         stmt = (
             sa.update(links)
             .where(links.c.id == link_id, links.c.blocked_at.is_(None))
-            .values(blocked_at=now, blocked_by=by, blocked_reason=reason, updated_at=now)
+            .values(blocked_at=now, blocked_by=actor.sub, blocked_reason=reason, updated_at=now)
             .returning(*links.c)
         )
-        return await self._returning_one(stmt)
+        return await self._moderate(stmt, "block", actor, now, reason)
 
-    async def unblock(self, link_id: UUID, *, now: datetime) -> Link | None:
+    async def unblock(
+        self, link_id: UUID, *, actor: Principal, reason: str, now: datetime
+    ) -> Link | None:
         stmt = (
             sa.update(links)
             .where(links.c.id == link_id, links.c.blocked_at.is_not(None))
             .values(blocked_at=None, blocked_by=None, blocked_reason=None, updated_at=now)
             .returning(*links.c)
         )
-        return await self._returning_one(stmt)
+        return await self._moderate(stmt, "unblock", actor, now, reason)
+
+    async def _moderate(
+        self,
+        stmt: Any,
+        action: LinkEventAction,
+        actor: Principal,
+        now: datetime,
+        reason: str | None = None,
+    ) -> Link | None:
+        """Apply a moderation write and record it in the same transaction, or neither."""
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(stmt)).one_or_none()
+            if row is None:
+                return None
+            link = _to_link(row)
+            await _record(conn, link.id, link.code, action, actor, now, reason)
+        return link
+
+    async def events(self, link_id: UUID) -> list[LinkEvent]:
+        stmt = (
+            sa.select(link_events)
+            .where(link_events.c.link_id == link_id)
+            .order_by(link_events.c.occurred_at, link_events.c.id)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [LinkEvent(**row._mapping) for row in rows]
+
+
+async def _record(
+    conn: AsyncConnection,
+    link_id: UUID,
+    link_code: str,
+    action: LinkEventAction,
+    actor: Principal,
+    now: datetime,
+    reason: str | None = None,
+) -> None:
+    await conn.execute(
+        sa.insert(link_events).values(
+            link_id=link_id,
+            link_code=link_code,
+            action=action,
+            actor_sub=actor.sub,
+            actor_username=actor.username,
+            reason=reason,
+            occurred_at=now,
+        )
+    )

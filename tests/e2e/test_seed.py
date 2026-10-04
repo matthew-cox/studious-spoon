@@ -18,6 +18,7 @@ EXPECTED_ROLES = {
     "eddie": {"editor"},
     "erin": {"editor"},
     "victor": {"viewer"},
+    "sam": {"support"},
     "nora": set(),
 }
 
@@ -48,7 +49,7 @@ def test_seeded_user_gets_token_with_roles_audience_and_sub(e2e_settings, userna
     aud = token_claims["aud"]
     assert "shortener-api" in ([aud] if isinstance(aud, str) else aud)
     roles = set(token_claims.get("realm_access", {}).get("roles", []))
-    assert roles & {"admin", "editor", "viewer"} == EXPECTED_ROLES[username]
+    assert roles & {"admin", "editor", "viewer", "support"} == EXPECTED_ROLES[username]
 
 
 def test_reseed_is_noop(e2e_settings):

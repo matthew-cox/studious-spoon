@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from shortener_admin.db import sessions as table
 from shortener_admin.security import new_token
 
-MANAGED_ROLES = frozenset({"admin", "editor", "viewer"})
+MANAGED_ROLES = frozenset({"admin", "editor", "viewer", "support"})
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,11 @@ class Session:
     @property
     def is_admin(self) -> bool:
         return "admin" in self.roles
+
+    @property
+    def can_moderate(self) -> bool:
+        """Block, unblock and moderation history (the API enforces it; this only shapes the UI)."""
+        return bool(self.roles & {"admin", "support"})
 
     @property
     def can_create(self) -> bool:

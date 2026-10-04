@@ -20,6 +20,10 @@
       {
         "name": "viewer",
         "description": "Read-only access to all links and stats"
+      },
+      {
+        "name": "support",
+        "description": "See all links and stats; block, unblock and read moderation history"
       }
     ]
   },

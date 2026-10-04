@@ -81,6 +81,11 @@ async def test_user_without_roles_gets_no_access_page(probe, client, login_as):
     assert "Sign out" in response.text
 
 
+async def test_support_only_user_has_access(probe, client, login_as):
+    await login_as("sam", ("support",))
+    assert (await client.get("/__probe_access")).status_code == 200
+
+
 async def test_api_401_mid_request_ends_the_session(app, client, mocks, ids, login_as, store):
     @app.get("/__probe_api")
     async def _probe_api(

@@ -195,9 +195,10 @@ The owner's switch and the admin block are deliberately separate (D6):
 - **Owner restrictions while blocked:**
   - `PATCH` (any field) → `409 Conflict`; the problem detail includes the block reason.
   - `DELETE` → `409 Conflict`, so the record is kept as evidence.
-- **Admins** can block, unblock, edit, and delete any link, blocked or not.
+- **Admins** can block, unblock, edit, and delete any link, blocked or not. **Support** can block and unblock any link, but never edit or delete one (§6.1).
 - **Unblocking** clears all three `blocked_*` columns. The link goes back to its previous `is_active` value.
-- **Admin UI:** a "Blocked" badge and the reason are shown to everyone who can see the link. Admins get block/unblock controls; blocking requires entering a reason.
+- **Moderation history:** every block, unblock and delete writes a row to `public.link_events` (link id and code, action, actor sub and username as of that moment, reason, time) in the same transaction as the change. There is no foreign key, so the history survives a deleted link. `api_user` has only `SELECT, INSERT` on it (append-only, migration 0003). `GET /api/v1/links/{id}/events` is for moderators only, admin and support (`Action.AUDIT`), and the admin UI shows it as a History section on the link page. Owners see the block reason on the link but never who blocked it.
+- **Admin UI:** a "Blocked" badge and the reason are shown to everyone who can see the link. Admins and support get block/unblock controls; both require entering a reason.
 - **Future edge caching:** once redirects are cached in CloudFront, block, disable, update, and delete must also trigger a CloudFront invalidation for `/{code}` (§12).
 
 ### 4.4 Validation Rules
@@ -293,33 +294,36 @@ Base path for JSON endpoints: `/api/v1`. Errors are `application/problem+json` (
 | `GET /readyz` | public | Readiness check: tests the DB connection. SQS is *not* checked, because redirects must keep working when SQS is down. |
 | `GET /api/v1/me` | any authenticated user (no-role users get `roles: []`) | `{sub, username, roles}` |
 | `POST /api/v1/links` | editor, admin | Body `{target_url}` → `201` with the link, including `short_url` |
-| `GET /api/v1/links` | viewer, editor, admin | Query: `q` (matches code or target), `status` (`active\|disabled\|blocked`), `owner` (admin/viewer only; ignored for editors, who always see only their own links), `page`, `page_size` (max 100). Editors only get their own links. |
-| `GET /api/v1/links/{id}` | viewer, editor (own), admin | Editors get `404` for links they don't own |
+| `GET /api/v1/links` | viewer, support, editor, admin | Query: `q` (matches code or target; a pasted short URL of this shortener, e.g. `https://sho.rt/AbC1234?x`, searches for its code), `status` (`active\|disabled\|blocked`), `owner` (owner username, exact match; narrows the caller's scope, never widens it), `page`, `page_size` (max 100). Editors only get their own links. |
+| `GET /api/v1/links/{id}` | viewer, support, editor (own), admin | Editors get `404` for links they don't own |
 | `PATCH /api/v1/links/{id}` | editor (own), admin | Body `{target_url?, is_active?}`. Owner on a blocked link → `409`. |
 | `DELETE /api/v1/links/{id}` | editor (own), admin | `204`. Owner on a blocked link → `409`. Rollups are removed by cascade. |
-| `POST /api/v1/links/{id}/block` | admin | Body `{reason}` (required, 1–1000 chars) → `200`. Already blocked → `409`. |
-| `POST /api/v1/links/{id}/unblock` | admin | `200`. Not blocked → `409`. |
-| `GET /api/v1/links/{id}/stats` | viewer, editor (own), admin | Query `from`, `to` (default: last 7 days), `bucket=hour\|day`. Returns `{total, series:[{ts,count}], top_referrers:[{referrer_host,count}], data_as_of}`. Top referrers: top 10 over the range. `data_as_of` = `pipeline_status.last_committed_at`. |
-| `GET /api/v1/stats/summary` | viewer, editor, admin | For the dashboard: `{link_count, clicks_7d, top_links:[{id, code, clicks_7d}], data_as_of}`. Editors only get their own links. |
+| `POST /api/v1/links/{id}/block` | support, admin | Body `{reason}` (required, 1–1000 chars) → `200`. Already blocked → `409`. |
+| `POST /api/v1/links/{id}/unblock` | support, admin | Body `{reason}` (required, 1–1000 chars; recorded in the history, not shown to the owner) → `200`. Not blocked → `409`. |
+| `GET /api/v1/links/{id}/events` | support, admin | Moderation history (§4.3), oldest first: `[{id, link_id, link_code, action, actor_username, reason, occurred_at}]`. Still readable after the link is deleted. |
+| `GET /api/v1/links/{id}/stats` | viewer, support, editor (own), admin | Query `from`, `to` (default: last 7 days), `bucket=hour\|day`. Returns `{total, series:[{ts,count}], top_referrers:[{referrer_host,count}], data_as_of}`. Top referrers: top 10 over the range. `data_as_of` = `pipeline_status.last_committed_at`. |
+| `GET /api/v1/stats/summary` | viewer, support, editor, admin | For the dashboard: `{link_count, clicks_7d, top_links:[{id, code, clicks_7d}], data_as_of}`. Editors only get their own links. |
 
 ### 6.1 Permission Policy
 
 Implemented as a pure function `can(principal, action, link) -> bool` (implemented as `decide(principal, action, link) -> Decision` with outcomes ALLOW/403/404/409, since the matrix has four outcomes) in `policy.py`. Routes call it; nothing else makes authorization decisions.
 
-| Action | admin | editor (own) | editor (other's) | viewer | no role |
-|---|---|---|---|---|---|
-| list / read / stats | ✅ | ✅ | ❌ (404) | ✅ | ❌ (403) |
-| create | ✅ | ✅ | — | ❌ (403) | ❌ (403) |
-| update / delete (not blocked) | ✅ | ✅ | ❌ (404) | ❌ (403) | ❌ (403) |
-| update / delete (blocked) | ✅ | ❌ (409) | ❌ (404) | ❌ (403) | ❌ (403) |
-| block / unblock | ✅ | ❌ (403) | ❌ (404) | ❌ (403) | ❌ (403) |
+| Action | admin | editor (own) | editor (other's) | viewer | support | no role |
+|---|---|---|---|---|---|---|
+| list / read / stats | ✅ | ✅ | ❌ (404) | ✅ | ✅ | ❌ (403) |
+| create | ✅ | ✅ | — | ❌ (403) | ❌ (403) | ❌ (403) |
+| update / delete (not blocked) | ✅ | ✅ | ❌ (404) | ❌ (403) | ❌ (403) | ❌ (403) |
+| update / delete (blocked) | ✅ | ❌ (409) | ❌ (404) | ❌ (403) | ❌ (403) | ❌ (403) |
+| block / unblock / moderation history | ✅ | ❌ (403) | ❌ (404) | ❌ (403) | ✅ | ❌ (403) |
+
+`support` is the role for the people who handle abuse reports: it sees every link and can block and unblock any of them (every action is recorded in the moderation history), but it never creates, edits or deletes. Delete stays with owners and admins because it is irreversible and destroys click history. Roles combine: an editor who is also support edits only their own links but can moderate any.
 
 Missing or invalid token → `401`.
 
 ## 7. Authentication & Keycloak
 
 ### 7.1 Realm `shortener`
-- Realm roles: `admin`, `editor`, `viewer`, emitted in the access token under `realm_access.roles`.
+- Realm roles: `admin`, `editor`, `viewer`, `support`, emitted in the access token under `realm_access.roles`.
 - Clients:
 
 | Client | Type | Config |
@@ -353,6 +357,7 @@ The browser reaches Keycloak at `http://localhost:8080`, but containers reach it
 | `eddie` | editor | Owns links |
 | `erin` | editor | Cannot see eddie's links |
 | `victor` | viewer | Read-only across all links |
+| `sam` | support | Handles abuse reports: block/unblock any link, no create/edit/delete |
 | `nora` | (none) | `403` / "no access" page |
 
 ## 8. Admin UI
@@ -455,7 +460,7 @@ Not built in this iteration; the design leaves room for each.
 7. **Redirect caching (Redis / ElastiCache):** cache-aside on `code → (target_url, status)`, cleared when a link is updated or blocked. Justified by the `shortener.redirect.duration` metrics.
 8. **Teams / orgs:** Keycloak groups → `org_id` on links; the policy function gains org-scoped rules.
 9. **Embedded Grafana panels:** an admin-only "System health" page in the admin UI showing service metrics.
-10. **Audit log:** an append-only `link_audit` table (who, what, when, before/after) for all link changes, including block/unblock.
+10. **Full audit log:** extend `public.link_events` (§4.3) from moderation actions to every link change (create, update with before/after, enable/disable), plus an admin-wide audit page with filters.
 11. **Playwright UI tests** (real-browser checks of the admin UI; HTTP-level e2e can't see htmx behaviour).
 12. **Domain blocklist:** target domains checked on create/update; blocked domains rejected with `422`.
 13. **Block appeals:** an owner-initiated appeal workflow for blocked links.
@@ -489,7 +494,7 @@ Written test-first (TDD).
 | Integration (api) | Every endpoint, redirects publish events, stats read from rollups, block rules | `pytest` + `httpx.AsyncClient` (ASGI transport) against real Postgres via **testcontainers**; `InMemoryClickPublisher`. Auth: the test fixture generates an RSA keypair, overrides the JWKS provider, and mints tokens with any roles. |
 | Integration (processor) | Consume → rollups → delete; invalid messages → DLQ; unknown links; transaction failure leaves messages on the queue | testcontainers for Postgres **and ElasticMQ** (generic container with the same `elasticmq.conf`) |
 | Integration (admin) | Routes, session store, refresh, CSRF, HTMX fragments | API mocked with `respx`; real Postgres for `admin.sessions`; OIDC callback stubbed. |
-| E2E smoke | The full compose stack | `make e2e` (pytest, `-m e2e`): real tokens via `shortener-dev` for seeded users. Observability scenarios: the Shortener Overview dashboard is provisioned, the HTTP and custom metrics reach Prometheus, the cross-SQS trace link (processor batch span linked to the API producer span) is found in Tempo, and a log line in stdout correlates with its trace through the Loki `trace_id`. Redirect scenario: eddie creates a link → erin gets `404` on it → following it returns `302` → **poll stats until total = 1 (timeout 15 s)** → alice blocks it → eddie's `PATCH` gets `409` → the redirect returns `410` and stats total stays 1 → victor can read it but gets `403` on create → nora gets `403`. |
+| E2E smoke | The full compose stack | `make e2e` (pytest, `-m e2e`): real tokens via `shortener-dev` for seeded users. Observability scenarios: the Shortener Overview dashboard is provisioned, the HTTP and custom metrics reach Prometheus, the cross-SQS trace link (processor batch span linked to the API producer span) is found in Tempo, and a log line in stdout correlates with its trace through the Loki `trace_id`. Redirect scenario: eddie creates a link → erin gets `404` on it → following it returns `302` → **poll stats until total = 1 (timeout 15 s)** → alice blocks it → eddie's `PATCH` gets `409` → the redirect returns `410` and stats total stays 1 → victor can read it but gets `403` on create → nora gets `403`. Support scenario: sam gets `403` on create, edit and delete, blocks a link (redirect `410`), unblocks it, and the moderation history names sam for both. Abuse workflow through the admin UI (HTTP-level, real Keycloak login): sam pastes a short URL into search, sees the click and its webmail referrer on the link page, blocks it (redirect `410`), and the History shows sam and the reason; unblocking with a reason is recorded too. |
 
 **CI (GitHub Actions):** the quality gates in §15.2 (`ruff check`, `ruff format --check`, `mypy --strict`, coverage thresholds), unit + integration tests for all packages, and Docker image builds. An `e2e` job brings up the full stack with `make up` and runs `make e2e`; compose logs are uploaded on failure.
 

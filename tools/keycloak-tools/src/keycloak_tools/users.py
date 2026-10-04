@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-MANAGED_ROLES: frozenset[str] = frozenset({"admin", "editor", "viewer"})
+MANAGED_ROLES: frozenset[str] = frozenset({"admin", "editor", "viewer", "support"})
 
 
 class DesiredUser(BaseModel):

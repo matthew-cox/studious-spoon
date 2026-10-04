@@ -21,6 +21,11 @@ def link_route(mocks, ids, link=LINK):
     mocks.get(f"{ids['API']}/api/v1/links/{LID}/stats").respond(
         422, json={"title": "n/a", "status": 422}
     )
+    # The owner summary (link counts) and admins' history: not under test here.
+    mocks.get(f"{ids['API']}/api/v1/links").respond(
+        json={"items": [], "total": 0, "page": 1, "page_size": 1}
+    )
+    mocks.get(f"{ids['API']}/api/v1/links/{LID}/events").respond(json=[])
     return mocks.get(f"{ids['API']}/api/v1/links/{LID}").respond(json=link)
 
 
@@ -99,6 +104,14 @@ async def test_detail_escapes_block_reason(client, mocks, ids, login_as):
     assert f'action="/links/{LID}/edit"' not in html  # owners can't edit blocked links
 
 
+async def test_blocked_banner_names_a_moderator(client, mocks, ids, login_as):
+    await login_as()
+    link_route(mocks, ids, LINK | {"status": "blocked", "blocked_reason": "spam"})
+    html = (await client.get(f"/links/{LID}")).text
+    assert "Blocked by a moderator." in html
+    assert "administrator" not in html
+
+
 async def test_non_uuid_id_is_a_404_page(client, mocks, ids, login_as):
     await login_as()
     response = await client.get("/links/not-a-uuid")
@@ -133,7 +146,7 @@ async def test_edit_on_blocked_link_shows_reason_inline(client, mocks, ids, logi
         json={
             "title": "Link is blocked",
             "status": 409,
-            "detail": "Blocked by an administrator: spam",
+            "detail": "Blocked by a moderator: spam",
             "blocked_reason": "spam",
         },
     )

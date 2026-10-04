@@ -86,6 +86,7 @@ class ApiClient:
         *,
         q: str | None = None,
         status: str | None = None,
+        owner: str | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> Any:
@@ -94,6 +95,8 @@ class ApiClient:
             params["q"] = q
         if status:
             params["status"] = status
+        if owner:
+            params["owner"] = owner
         return await self._call("GET", "/api/v1/links", token, params=params)
 
     async def create_link(self, token: str, target_url: str) -> Any:
@@ -125,8 +128,13 @@ class ApiClient:
             "POST", f"/api/v1/links/{link_id}/block", token, json={"reason": reason}
         )
 
-    async def unblock_link(self, token: str, link_id: str) -> Any:
-        return await self._call("POST", f"/api/v1/links/{link_id}/unblock", token)
+    async def unblock_link(self, token: str, link_id: str, reason: str) -> Any:
+        return await self._call(
+            "POST", f"/api/v1/links/{link_id}/unblock", token, json={"reason": reason}
+        )
+
+    async def link_events(self, token: str, link_id: str) -> Any:
+        return await self._call("GET", f"/api/v1/links/{link_id}/events", token)
 
     async def link_stats(
         self,

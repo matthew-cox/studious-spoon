@@ -20,7 +20,7 @@ def test_migrations_applied_and_api_user_can_read_links(e2e_settings):
     with connect(e2e_settings, "api_user", e2e_settings.api_db_password) as conn:
         version = conn.execute("SELECT version_num FROM public.alembic_version").fetchone()
         conn.execute("SELECT count(*) FROM public.links")
-    assert version == ("0002",)
+    assert version == ("0003",)
 
 
 def test_admin_user_cannot_read_links(e2e_settings):

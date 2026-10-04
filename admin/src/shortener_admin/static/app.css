@@ -13,3 +13,14 @@ td.target { max-width: 28rem; overflow-wrap: anywhere; }
 }
 [role="alert"] { background: #fee2e2; color: #991b1b; border-color: #dc2626; }
 [role="status"] { background: #d1fae5; color: #065f46; border-color: #10b981; }
+/* Link detail: chart and top referrers side by side; stacked on narrow screens. */
+.stats-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; align-items: start; }
+.stats-grid > * { min-width: 0; } /* let the canvas shrink with its column */
+.stats-grid h3 { margin-top: 0; }
+@media (max-width: 768px) { .stats-grid { grid-template-columns: 1fr; } }
+/* Link detail: details and the edit form side by side; details alone fill the row. */
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1.5rem; align-items: start; }
+.detail-grid > * { min-width: 0; }
+.detail-grid h2 { margin-top: 0; }
+.filter-chip { margin-bottom: 0.5rem; }
+.filter-chip a { margin-left: 0.5rem; font-size: 0.85rem; }

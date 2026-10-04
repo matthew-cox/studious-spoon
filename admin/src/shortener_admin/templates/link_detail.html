@@ -9,15 +9,17 @@
      <button type="button" class="outline secondary" data-copy="{{ link.short_url }}">Copy</button></p>
 </hgroup>
 {% if link.status == "blocked" %}
-<article><strong>Blocked by an administrator.</strong> Reason: {{ link.blocked_reason }}</article>
+<article><strong>Blocked by a moderator.</strong> Reason: {{ link.blocked_reason }}</article>
 {% endif %}
+<div class="detail-grid">
 <dl>
   <dt>Target</dt><dd class="target">{{ link.target_url }}</dd>
-  <dt>Owner</dt><dd>{{ link.owner_username }}</dd>
+  <dt>Owner</dt>
+  <dd><a href="/links?{{ {"owner": link.owner_username} | urlencode }}">{{ link.owner_username }}</a>
+    {%- if owner_summary %} <span class="muted">· {{ owner_summary.total }} link{{ "" if owner_summary.total == 1 else "s" }} · <a href="/links?{{ {"owner": link.owner_username, "status": "blocked"} | urlencode }}">{{ owner_summary.blocked }} blocked</a></span>{% endif %}</dd>
   <dt>Created</dt><dd>{{ link.created_at | as_of }}</dd>
   <dt>Updated</dt><dd>{{ link.updated_at | as_of }}</dd>
 </dl>
-
 {% if can_edit %}
 <section>
   <h2>Edit</h2>
@@ -41,6 +43,15 @@
   </details>
 </section>
 {% endif %}
+</div>
+
+{% if stats %}
+<section>
+  <h2>Clicks</h2>
+  {% include "partials/link_stats.html" %}
+</section>
+{% endif %}
+
 
 {% if can_block %}
 <section>
@@ -48,6 +59,7 @@
   {% if link.status == "blocked" %}
   <form method="post" action="/links/{{ link.id }}/unblock">
     <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <label>Reason for unblocking (recorded in the history) <input type="text" name="reason" required maxlength="1000"></label>
     <button type="submit" class="secondary">Unblock</button>
   </form>
   {% else %}
@@ -60,10 +72,28 @@
 </section>
 {% endif %}
 
-{% if stats %}
+{% if can_block %}
 <section>
-  <h2>Clicks</h2>
-  {% include "partials/link_stats.html" %}
+  <h2>History</h2>
+  {% if history is none %}
+  <p>History unavailable.</p>
+  {% elif not history %}
+  <p>No moderation actions yet.</p>
+  {% else %}
+  <table>
+    <thead><tr><th>When</th><th>Action</th><th>By</th><th>Reason</th></tr></thead>
+    <tbody>
+    {% for event in history %}
+      <tr>
+        <td>{{ event.occurred_at | as_of }}</td>
+        <td>{{ {"block": "Blocked", "unblock": "Unblocked", "delete": "Deleted"}[event.action] }}</td>
+        <td>{{ event.actor_username }}</td>
+        <td>{{ event.reason or "" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
 </section>
 {% endif %}
 {% endblock %}

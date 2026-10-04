@@ -22,7 +22,7 @@ margin:4rem auto;padding:0 1rem}}</style>
 </head><body><h1>{title}</h1><p>{message}</p></body></html>"""
 NOT_FOUND_PAGE = _PAGE.format(title="Link not found", message="This short link doesn't exist.")
 BLOCKED_PAGE = _PAGE.format(
-    title="Link disabled", message="This link has been disabled by an administrator."
+    title="Link disabled", message="This link has been disabled by a moderator."
 )
 
 

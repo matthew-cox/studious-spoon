@@ -13,15 +13,12 @@ DOCKER_ENV := . scripts/docker-env.sh &&
 # `make token USER=eddie`; USER is also a shell env var, so only honor it from the command line.
 TOKEN_USER = $(if $(filter command line,$(origin USER)),$(USER),alice)
 
-.PHONY: sync lint fmt typecheck test check up down logs migrate seed-users token e2e ui dev
+.PHONY: sync lint fmt typecheck test check up down logs migrate seed-users token e2e ui dev demo-data
 
 # uv sync creates/updates .venv automatically; touch it to update mtime.
-.venv: pyproject.toml uv.lock
+sync: pyproject.toml uv.lock
 	uv sync --all-packages --frozen
 	touch .venv
-
-sync:
-	uv sync --all-packages --frozen
 
 lint:
 	uv run ruff check .
@@ -43,7 +40,7 @@ check: lint typecheck test
 .env:
 	cp .env.example .env
 
-up: .env
+up: sync .env
 	$(COMPOSE) up -d --build --wait postgres elasticmq keycloak otel-lgtm
 	$(COMPOSE) run --rm --build migrate
 	$(COMPOSE) run --rm --build keycloak-seed
@@ -71,6 +68,10 @@ seed-users: .env
 
 token:
 	@scripts/token $(TOKEN_USER)
+
+# Demo links, clicks and moderation history for a walkthrough as sam (needs `make up`).
+demo-data:
+	scripts/demo-data.sh
 
 e2e:
 	$(DOCKER_ENV) uv run pytest -m e2e tests/e2e -v

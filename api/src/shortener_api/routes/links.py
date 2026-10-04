@@ -7,7 +7,15 @@ from shortener_api.auth import current_principal
 from shortener_api.deps import AppDeps, get_deps
 from shortener_api.links_repo import LinkQuery, LinkRepository
 from shortener_api.policy import Principal
-from shortener_api.schemas import BlockRequest, LinkCreate, LinkOut, LinkPage, LinkUpdate, MeOut
+from shortener_api.schemas import (
+    LinkCreate,
+    LinkEventOut,
+    LinkOut,
+    LinkPage,
+    LinkUpdate,
+    MeOut,
+    ModerationRequest,
+)
 from shortener_api.service import LinkService
 
 router = APIRouter(prefix="/api/v1", tags=["links"])
@@ -55,12 +63,13 @@ async def list_links(
     q: Annotated[str | None, Query(max_length=200)] = None,
     status: Literal["active", "disabled", "blocked"] | None = None,
     owner: Annotated[
-        str | None, Query(max_length=64, description="owner sub (admin/viewer only)")
+        str | None,
+        Query(max_length=255, description="owner username, exact match (narrows, never widens)"),
     ] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> LinkPage:
-    query = LinkQuery(q=q, status=status, owner_sub=owner, page=page, page_size=page_size)
+    query = LinkQuery(q=q, status=status, owner_username=owner, page=page, page_size=page_size)
     return LinkPage.of(await service.list(principal, query), _base(deps))
 
 
@@ -89,13 +98,29 @@ async def delete_link(link_id: UUID, principal: CurrentPrincipal, service: Servi
 
 @router.post("/links/{link_id}/block")
 async def block_link(
-    link_id: UUID, body: BlockRequest, principal: CurrentPrincipal, service: Service, deps: Deps
+    link_id: UUID,
+    body: ModerationRequest,
+    principal: CurrentPrincipal,
+    service: Service,
+    deps: Deps,
 ) -> LinkOut:
     return LinkOut.of(await service.block(principal, link_id, body.reason), _base(deps))
 
 
 @router.post("/links/{link_id}/unblock")
 async def unblock_link(
-    link_id: UUID, principal: CurrentPrincipal, service: Service, deps: Deps
+    link_id: UUID,
+    body: ModerationRequest,
+    principal: CurrentPrincipal,
+    service: Service,
+    deps: Deps,
 ) -> LinkOut:
-    return LinkOut.of(await service.unblock(principal, link_id), _base(deps))
+    return LinkOut.of(await service.unblock(principal, link_id, body.reason), _base(deps))
+
+
+@router.get("/links/{link_id}/events")
+async def link_events(
+    link_id: UUID, principal: CurrentPrincipal, service: Service
+) -> list[LinkEventOut]:
+    """Moderation history (block, unblock, delete), oldest first. Admin and support only."""
+    return [LinkEventOut.of(e) for e in await service.events(principal, link_id)]

@@ -1,10 +1,12 @@
-"""Target-URL validation (spec §4.4). Pure: no framework imports."""
+"""Target-URL validation (spec §4.4) and short-URL recognition. Pure: no framework imports."""
 
+import re
 from urllib.parse import SplitResult, unquote, urlsplit
 
 MAX_URL_LENGTH = 2048
 _SCHEMES = {"http", "https"}
 _DEFAULT_PORTS = {"http": 80, "https": 443}
+_CODE = re.compile(r"[A-Za-z0-9]{1,32}")
 
 
 class InvalidTargetUrl(ValueError):
@@ -46,3 +48,33 @@ def validate_target_url(raw: str, own_base_url: str) -> str:
     if _authority(parts) == _authority(_split(own_base_url)):
         raise InvalidTargetUrl("URL must not point at this shortener")
     return url
+
+
+def _site(parts: SplitResult, fallback_scheme: str) -> tuple[str, int | None]:
+    """(host, port) with the scheme's default port written as None, so http/https both match."""
+    port = parts.port  # may raise ValueError; callers treat that as "not ours"
+    if port == _DEFAULT_PORTS.get(parts.scheme.lower() or fallback_scheme):
+        port = None
+    return (parts.hostname or "").lower().rstrip("."), port
+
+
+def short_code_from(text: str, own_base_url: str) -> str | None:
+    """The code in a pasted short URL of this shortener ("https://sho.rt/AbC1234?x" -> "AbC1234").
+
+    Scheme, query, fragment and a trailing slash are ignored; anything else returns None.
+    """
+    pasted = text.strip()
+    if "://" not in pasted:
+        pasted = f"//{pasted}"  # "sho.rt/AbC1234": parse the host as a host, not a path
+    base = urlsplit(own_base_url)
+    try:
+        parts = urlsplit(pasted)
+        if not parts.hostname or _site(parts, base.scheme) != _site(base, base.scheme):
+            return None
+    except ValueError:
+        return None
+    prefix = base.path.rstrip("/") + "/"
+    if not parts.path.startswith(prefix):
+        return None
+    code = parts.path[len(prefix) :].rstrip("/")
+    return code if _CODE.fullmatch(code) else None

@@ -32,22 +32,31 @@ def _page_number(raw: str) -> int:
 
 @router.get("/links")
 async def list_links(
-    request: Request, deps: Deps, session: Access, q: str = "", status: str = "", page: str = "1"
-) -> HTMLResponse:
+    request: Request, deps: Deps, session: Access,
+    q: str = "", status: str = "", owner: str = "", page: str = "1",
+) -> HTMLResponse:  # fmt: skip
     query = q.strip()
     status_filter = status if status in STATUSES else ""
+    owner_filter = owner.strip()
     page_no = _page_number(page)
     result: dict[str, Any] = await deps.api.list_links(
-        session.tokens.access_token, q=query or None, status=status_filter or None, page=page_no
+        session.tokens.access_token,
+        q=query or None,
+        status=status_filter or None,
+        owner=owner_filter or None,
+        page=page_no,
     )
     pages = max(1, math.ceil(result["total"] / result["page_size"]))
+    filters = {k: v for k, v in (("q", query), ("status", status_filter)) if v}
 
     def page_url(n: int) -> str:
-        params = {k: v for k, v in (("q", query), ("status", status_filter)) if v} | {"page": n}
-        return f"/links?{urlencode(params)}"
+        owner_param = {"owner": owner_filter} if owner_filter else {}
+        return f"/links?{urlencode(filters | owner_param | {'page': n})}"
 
+    clear_owner_url = f"/links?{urlencode(filters)}" if filters else "/links"
     template = "partials/links_table.html" if is_htmx(request) else "links.html"
-    return render(request, template, result=result, q=query, status=status_filter, page=page_no,
+    return render(request, template, result=result, q=query, status=status_filter,
+                  owner=owner_filter, clear_owner_url=clear_owner_url, page=page_no,
                   pages=pages, page_url=page_url, statuses=STATUSES,
                   deleted=request.query_params.get("deleted") == "1")  # fmt: skip
 
@@ -93,12 +102,38 @@ async def _stats(
     return stats
 
 
+async def _history(deps: AdminDeps, session: Session, link_id: str) -> list[Any] | None:
+    """Moderation history for moderators (the API refuses everyone else); None if unavailable."""
+    try:
+        events: list[Any] = await deps.api.link_events(session.tokens.access_token, link_id)
+    except ApiError as exc:
+        if exc.status in PASS_THROUGH:
+            raise
+        return None
+    return events
+
+
+async def _owner_summary(deps: AdminDeps, session: Session, owner: str) -> dict[str, int] | None:
+    """How many links the owner has, and how many are blocked; None if unavailable."""
+    token = session.tokens.access_token
+    try:
+        everything = await deps.api.list_links(token, owner=owner, page_size=1)
+        blocked = await deps.api.list_links(token, owner=owner, status="blocked", page_size=1)
+    except ApiError as exc:
+        if exc.status in PASS_THROUGH:
+            raise
+        return None
+    return {"total": everything["total"], "blocked": blocked["total"]}
+
+
 async def _detail(
     request: Request, deps: AdminDeps, session: Session, link_id: str, *,
     notice: str | None = None, error: ApiError | None = None, bucket: str = "hour",
 ) -> HTMLResponse:  # fmt: skip
     link = await deps.api.get_link(session.tokens.access_token, link_id)
     stats = await _stats(deps, session, link_id, bucket)
+    history = await _history(deps, session, link_id) if session.can_moderate else None
+    owner_summary = await _owner_summary(deps, session, link["owner_username"])
     return render(
         request,
         "link_detail.html",
@@ -107,7 +142,9 @@ async def _detail(
         notice=notice,
         error=api_message(error) if error else None,
         can_edit=_can_edit(session, link),
-        can_block=session.is_admin,
+        can_block=session.can_moderate,
+        history=history,
+        owner_summary=owner_summary,
         stats=stats,
         chart=chart_data(stats, bucket) if stats else None,
         bucket=bucket,
@@ -234,10 +271,18 @@ async def block_link(
 
 
 @router.post("/links/{link_id}/unblock")
-async def unblock_link(request: Request, link_id: str, deps: Deps, session: Mutate) -> Response:
+async def unblock_link(
+    request: Request, link_id: str, deps: Deps, session: Mutate, reason: Annotated[str, Form()] = ""
+) -> Response:
     lid = _uuid_or_none(link_id)
     if lid is None:
         return _not_found(request)
     token = session.tokens.access_token
-    return await _act(request, deps, session, lid, lambda: deps.api.unblock_link(token, lid),
-                      f"/links/{lid}?updated=1")  # fmt: skip
+    return await _act(
+        request,
+        deps,
+        session,
+        lid,
+        lambda: deps.api.unblock_link(token, lid, reason),
+        f"/links/{lid}?updated=1",
+    )

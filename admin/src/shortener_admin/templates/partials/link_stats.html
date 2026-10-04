@@ -9,18 +9,24 @@
   </label>
 </form>
 <p><strong>{{ stats.total }}</strong> clicks</p>
-<canvas data-chart='{{ chart | tojson }}' height="120" aria-label="Clicks over time" role="img"></canvas>
-<h3>Top referrers</h3>
-{% if stats.top_referrers %}
-<table>
-  <thead><tr><th>Referrer</th><th>Clicks</th></tr></thead>
-  <tbody>
-  {% for row in stats.top_referrers %}<tr><td>{{ row.referrer_host }}</td><td>{{ row.count }}</td></tr>{% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="muted">No referrers yet.</p>
-{% endif %}
+<div class="stats-grid">
+  <div class="stats-chart">
+    <canvas data-chart='{{ chart | tojson }}' height="120" aria-label="Clicks over time" role="img"></canvas>
+  </div>
+  <div>
+    <h3>Top referrers</h3>
+    {% if stats.top_referrers %}
+    <table>
+      <thead><tr><th>Referrer</th><th>Clicks</th></tr></thead>
+      <tbody>
+      {% for row in stats.top_referrers %}<tr><td>{{ row.referrer_host }}</td><td>{{ row.count }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No referrers yet.</p>
+    {% endif %}
+  </div>
+</div>
 <p class="muted"><small>{% if stats.data_as_of %}Data as of {{ stats.data_as_of | as_of }}{% else %}No clicks processed yet{% endif %}</small></p>
 {% else %}
 <p class="muted">Stats are unavailable right now.</p>

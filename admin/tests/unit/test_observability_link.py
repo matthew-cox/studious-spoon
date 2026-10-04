@@ -24,7 +24,7 @@ async def test_admin_sees_the_observability_link(client, mocks, ids, login_as):
     assert LINK_HTML in await dashboard_html(client, mocks, ids)
 
 
-@pytest.mark.parametrize("roles", [("editor",), ("viewer",), ()])
+@pytest.mark.parametrize("roles", [("editor",), ("viewer",), ("support",), ()])
 async def test_non_admins_never_see_it(client, mocks, ids, login_as, roles):
     await login_as("someone", roles)
     assert "Observability" not in await dashboard_html(client, mocks, ids)

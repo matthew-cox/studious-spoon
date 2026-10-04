@@ -11,7 +11,7 @@ from pydantic import (
     model_validator,
 )
 
-from shortener_api.links_repo import Link, LinkStatus, Page
+from shortener_api.links_repo import Link, LinkEvent, LinkEventAction, LinkStatus, Page
 
 
 class MeOut(BaseModel):
@@ -35,7 +35,9 @@ class LinkUpdate(BaseModel):
         return self
 
 
-class BlockRequest(BaseModel):
+class ModerationRequest(BaseModel):
+    """Body for block and unblock: why, recorded in the moderation history."""
+
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
@@ -66,6 +68,30 @@ class LinkOut(BaseModel):
             blocked_reason=link.blocked_reason,
             created_at=link.created_at,
             updated_at=link.updated_at,
+        )
+
+
+class LinkEventOut(BaseModel):
+    """A moderation action on a link. Moderators only: it names who acted."""
+
+    id: int
+    link_id: UUID
+    link_code: str
+    action: LinkEventAction
+    actor_username: str
+    reason: str | None
+    occurred_at: datetime
+
+    @classmethod
+    def of(cls, event: LinkEvent) -> "LinkEventOut":
+        return cls(
+            id=event.id,
+            link_id=event.link_id,
+            link_code=event.link_code,
+            action=event.action,
+            actor_username=event.actor_username,
+            reason=event.reason,
+            occurred_at=event.occurred_at,
         )
 
 

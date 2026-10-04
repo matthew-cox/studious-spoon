@@ -25,6 +25,12 @@ users:
     last_name: Viewer
     password: password
     roles: [viewer]
+  - username: sam
+    email: sam@example.test
+    first_name: Sam
+    last_name: Support
+    password: password
+    roles: [support]
   - username: nora
     email: nora@example.test
     first_name: Nora

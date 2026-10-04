@@ -17,7 +17,7 @@ def tables(conn: psycopg.Connection, schema: str) -> set[str]:
 
 def test_all_tables_exist(migrated):
     with migrated.connect("migrator") as conn:
-        assert {"links", "alembic_version"} <= tables(conn, "public")
+        assert {"links", "link_events", "alembic_version"} <= tables(conn, "public")
         assert tables(conn, "analytics") == {
             "link_clicks_hourly",
             "link_referrers_daily",
@@ -67,10 +67,48 @@ def test_api_user_privileges(migrated, insert_link):
             conn.execute("SELECT * FROM admin.sessions")
 
 
+def test_link_events_are_append_only_for_api_user(migrated):
+    """The audit record survives a buggy or compromised API: it can add rows, never rewrite them."""
+    with migrated.connect("api_user") as conn:
+        conn.execute(
+            "INSERT INTO public.link_events (link_id, link_code, action, actor_sub,"
+            " actor_username, reason, occurred_at) VALUES"
+            " (gen_random_uuid(), 'abc1234', 'block', 'sub-alice', 'alice', 'phishing', now())"
+        )
+        assert conn.execute("SELECT count(*) FROM public.link_events").fetchone() == (1,)
+        with pytest.raises(errors.InsufficientPrivilege):
+            conn.execute("UPDATE public.link_events SET reason = 'nothing to see'")
+    with migrated.connect("api_user") as conn, pytest.raises(errors.InsufficientPrivilege):
+        conn.execute("DELETE FROM public.link_events")
+
+
+def test_link_events_outlive_their_link(migrated, insert_link):
+    link_id = insert_link()
+    with migrated.connect("migrator") as conn:
+        conn.execute(
+            "INSERT INTO public.link_events (link_id, link_code, action, actor_sub,"
+            " actor_username, occurred_at) VALUES (%s, 'abc1234', 'delete', 'sub-alice',"
+            " 'alice', now())",
+            (link_id,),
+        )
+        conn.execute("DELETE FROM public.links WHERE id = %s", (link_id,))
+        count = conn.execute("SELECT count(*) FROM public.link_events").fetchone()
+    assert count == (1,)
+
+
+def test_link_event_action_is_constrained(migrated):
+    with migrated.connect("migrator") as conn, pytest.raises(errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO public.link_events (link_id, link_code, action, actor_sub,"
+            " actor_username, occurred_at) VALUES (gen_random_uuid(), 'abc1234', 'renamed',"
+            " 'sub-alice', 'alice', now())"
+        )
+
+
 def test_api_user_can_read_schema_version(migrated):
     with migrated.connect("api_user") as conn:
         version = conn.execute("SELECT version_num FROM public.alembic_version").fetchone()
-    assert version == ("0002",)
+    assert version == ("0003",)
 
 
 def test_processor_user_privileges(migrated, insert_link):
@@ -169,5 +207,6 @@ def test_each_test_starts_with_no_links(migrated):
     """Guards the per-test reset (spec §15.2): earlier tests' rows must not leak in."""
     with migrated.connect("migrator") as conn:
         assert conn.execute("SELECT count(*) FROM public.links").fetchone() == (0,)
+        assert conn.execute("SELECT count(*) FROM public.link_events").fetchone() == (0,)
         status = conn.execute("SELECT last_committed_at FROM analytics.pipeline_status").fetchone()
     assert status == (None,)
