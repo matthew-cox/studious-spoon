@@ -144,7 +144,7 @@ in S3 feeding the click pipeline, an ElastiCache link cache in front of RDS, WAF
 
 Initially I chose 3 roles: admin, editor, and viewer. As I thought more about the abuse report workflow, I decided that an additional support role made sense.
 
-The brief asked for `can(principal, action, link) -> bool`. It was implemented as `decide(principal, action, link) -> Decision`, a pure function in [`api/src/shortener_api/policy.py`](api/src/shortener_api/policy.py) that returns ALLOW, 403, 404 or 409, because the matrix has four outcomes, not two. Routes call it; nothing else makes authorization decisions.
+The spec first sketched `can(principal, action, link) -> bool`. It was implemented as `decide(principal, action, link) -> Decision`, a pure function in [`api/src/shortener_api/policy.py`](api/src/shortener_api/policy.py) that returns ALLOW, 403, 404 or 409, because the matrix has four outcomes, not two. Routes call it; nothing else makes authorization decisions.
 
 | Action | admin | editor (own) | editor (other's) | viewer | support | no role |
 |---|---|---|---|---|---|---|
@@ -412,6 +412,8 @@ HTTP 204
 
 * No full audit log yet. Moderation history covers block/unblock/delete only, not create/edit. This was an optional feature, but as soon as I started working through the admin panel and thinking about it like a CRM: the business would need more history information.
 
+* The moderation history of a deleted link is kept, but only the API can show it. Moderators can still call `GET /api/v1/links/{id}/events` if they have the link's id, but in the Admin UI a deleted link's page returns 404 and there's no page that lists history across links. A global audit log view, searchable by code, would close that gap.
+
 * Account management lives outside the Admin UI and there's no user sign-up flow. All management is done in Keycloak. That won't work in production. With Cognito ([ADR 0002](docs/adr/0002-cognito-production-idp.md)), the Admin UI could manage accounts, such as disabling a user, through Cognito's admin API.
 
 * Finding links by owner relies on Keycloak usernames never changing. If the Keycloak realm enables username changes, it could split link ownership. Cognito usernames can't be changed, so this risk goes away in production. The link DB schema has no index on the `owner_username` column, which doesn't matter for a small dataset, but wouldn't scale.
@@ -422,7 +424,9 @@ HTTP 204
 
 * `decide` returns HTTP status codes (403, 404, 409) rather than plain outcomes, so a presentation choice, such as answering 404 to hide that a link exists, lives inside the authorization policy. Changing that choice, or answering differently for an internal caller such as a crawler, would mean editing the policy and its tests. The cleaner split is for `decide` to return outcomes such as "not visible" or "blocked", and for one mapping, which already exists in `enforce()`, to turn them into status codes.
 
-* Support can unblock without a second person's sign-off (no four-eyes). This allows them to undo a mistaken block, but likely there should be other controls here for production usage (perhaps limit unblocking to blocks they made or limit the window within which they can undo a block or similar).
+* Support can unblock without a second person's sign-off (no four-eyes), though an unblock, like a block, needs a reason and is recorded in the history. This allows them to undo a mistaken block, but likely there should be other controls here for production usage (perhaps limit unblocking to blocks they made or limit the window within which they can undo a block or similar).
+
+* Abuse handling is reactive and per link. Blocking a link doesn't stop the same owner from creating another link to the same target. In production, a block would feed a denylist checked at create time (target URL and domain), new targets would be checked against a reputation service such as Google Safe Browsing, link creation would be rate limited per user, and owners with repeated blocks would be flagged for review or disabled through Cognito.
 
 * Click counts are at-least-once (rare overcounts); the API's in-memory click buffer can lose ~hundreds of ms of clicks on a crash. For production, that loss window should shrink, or the buffer should be durable.
 
