@@ -60,7 +60,7 @@ to the admin UI (http://localhost:8001) as `sam` / `password`.
 
 ```bash
 make sync               # install the workspace
-make up                 # start the whole stack: services, migrations, seeded Keycloak users
+make up                 # start the whole stack: services, migrations, seeded users
 make e2e                # verify the running stack
 ```
 
