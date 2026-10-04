@@ -3750,7 +3750,7 @@ Co-Authored-By: <implementing model> <noreply@anthropic.com>"
 ### Task 12: Documentation and the state-safety guard
 
 **Files:**
-- Create: `terraform/README.md`
+- Expand: `terraform/README.md` (already exists as a pre-build overview, written 2026-10-03: links, planned layout, key decisions; keep those and drop its "not built yet" note)
 - Modify: `Makefile` (add a secret-in-state grep guard to `tf-check`), `docs/superpowers/specs/2026-10-01-url-shortener-design.md` (§2, §11, §12), `docs/superpowers/specs/2026-10-02-terraform-aws-design.md` (T8 exception note, test layout), `README.md`
 
 **Interfaces:**
@@ -3769,7 +3769,7 @@ Prove that it fires: temporarily add `secret_string = "x"` to `terraform/modules
 
 It contains these sections, using the exact facts from the spec and the code:
 1. **What this is:** plan-ready Terraform for AWS, never applied (T1), and how to run `make tf-check`. Prerequisites: `brew install tfenv tflint trivy && tfenv install`.
-2. **Architecture:** a Mermaid diagram covering Route 53 → ALB (go./admin./auth.) → ECS services (api, admin, keycloak) with ADOT sidecars, the processor ↔ SQS (+ DLQ), RDS, Secrets Manager, CloudWatch/X-Ray, and the SNS alarms.
+2. **Architecture:** no Mermaid diagram. The README already embeds the user's layered image (`docs/aws-tf-initial.png`, under "Planned layout") and its caption; keep both, and check the caption still matches what was built. Add the request path as a short list beside it: Route 53 → ALB (go./admin./auth.) → ECS services (api, admin, keycloak) with ADOT sidecars, the processor ↔ SQS (+ DLQ), RDS, Secrets Manager, CloudWatch/X-Ray, and the SNS alarms.
 3. **Platform inputs:** the table from spec §4.
 4. **Layout:** modules → stack → envs; tests live beside each module; the shared mock fixtures are in `terraform/testing/aws`.
 5. **Deploy sequence:** the steps from spec §8, as commands a pipeline would run (`aws ecs run-task` with the `one_off_tasks` family plus its security group and `private_subnet_ids`, then `aws ecs update-service`), run by the OIDC role from self-hosted runners.
