@@ -59,7 +59,7 @@ async def test_blocked_link_is_410_even_if_active(client, deps, insert_link, clo
     )
     response = await client.get("/blk0003")
     assert response.status_code == 410
-    assert "has been disabled" in response.text
+    assert "has been disabled by a moderator" in response.text  # admin or support
     assert "malware" not in response.text  # the reason is for the owner, not the public
     assert response.headers["cache-control"] == "private, no-store"
     assert deps.publisher.events == []

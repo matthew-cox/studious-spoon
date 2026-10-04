@@ -83,6 +83,13 @@ async def test_owner_patch_losing_the_race_is_409_with_reason(service, repo):
     assert repo.write_flags == [True]
 
 
+async def test_409_names_a_moderator_not_an_administrator(service, repo):
+    # Support blocks links too, and owners must not learn who blocked (spec §4.3).
+    with pytest.raises(ProblemError) as caught:
+        await service.update(OWNER, repo.link.id, target_url=None, is_active=False)
+    assert caught.value.detail == "Blocked by a moderator: phishing"
+
+
 async def test_owner_delete_losing_the_race_is_409_with_reason(service, repo):
     with pytest.raises(ProblemError) as caught:
         await service.delete(OWNER, repo.link.id)

@@ -63,7 +63,7 @@ async def test_problem_json_becomes_api_error_with_extras(api, ids):
     respx.patch(f"{ids['API']}/api/v1/links/L1").respond(
         409,
         json={"type": "about:blank", "title": "Link is blocked", "status": 409,
-              "detail": "Blocked by an administrator: spam", "blocked_reason": "spam"},
+              "detail": "Blocked by a moderator: spam", "blocked_reason": "spam"},
         headers={"content-type": "application/problem+json"},
     )  # fmt: skip
     with pytest.raises(ApiError) as caught:
@@ -72,7 +72,7 @@ async def test_problem_json_becomes_api_error_with_extras(api, ids):
     assert (error.status, error.title, error.detail) == (
         409,
         "Link is blocked",
-        "Blocked by an administrator: spam",
+        "Blocked by a moderator: spam",
     )
     assert error.extra == {"blocked_reason": "spam"}
 

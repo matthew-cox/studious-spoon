@@ -9,7 +9,7 @@
      <button type="button" class="outline secondary" data-copy="{{ link.short_url }}">Copy</button></p>
 </hgroup>
 {% if link.status == "blocked" %}
-<article><strong>Blocked by an administrator.</strong> Reason: {{ link.blocked_reason }}</article>
+<article><strong>Blocked by a moderator.</strong> Reason: {{ link.blocked_reason }}</article>
 {% endif %}
 <div class="detail-grid">
 <dl>

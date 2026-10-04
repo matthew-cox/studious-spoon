@@ -32,7 +32,7 @@ def _blocked(link: Link) -> ProblemError:
     return ProblemError(
         409,
         "Link is blocked",
-        f"Blocked by an administrator: {reason}",
+        f"Blocked by a moderator: {reason}",
         extra={"blocked_reason": reason},
     )
 
